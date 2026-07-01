@@ -10,12 +10,14 @@ import {
   Select, SelectContent, SelectItem, SelectTrigger, SelectValue,
 } from "@/components/ui/select";
 import {
-  Bot, Clock, Building2, AlertTriangle, Save, Loader2, CheckCircle2,
+  Bot, Clock, Building2, AlertTriangle, Save, Loader2, CheckCircle2, Key, Zap,
 } from "lucide-react";
 import { toast } from "sonner";
+import { getApiKey, saveApiKey } from "@/lib/ai-client";
 
 export function SettingsPage() {
   const [settings, setSettings] = useState<Record<string, string>>({});
+  const [apiKey, setApiKey] = useState("");
   const [loading, setLoading] = useState(true);
   const [saving, setSaving] = useState(false);
 
@@ -24,7 +26,6 @@ export function SettingsPage() {
     fetch("/api/settings")
       .then(r => r.json())
       .then(d => {
-        // apply defaults
         setSettings({
           aiModel: d.aiModel || "glm-4-plus",
           aiTimeout: d.aiTimeout || "60",
@@ -36,6 +37,7 @@ export function SettingsPage() {
           refundRateMax: d.refundRateMax || "8",
           promotionRateMax: d.promotionRateMax || "25",
         });
+        setApiKey(getApiKey());
         setLoading(false);
       })
       .catch(() => { toast.error("加载设置失败"); setLoading(false); });
@@ -46,13 +48,18 @@ export function SettingsPage() {
   const handleSave = async () => {
     setSaving(true);
     try {
+      // 保存 API Key 到 localStorage
+      saveApiKey(apiKey);
+      // 保存其他设置到数据库
       const res = await fetch("/api/settings", {
         method: "PUT",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify(settings),
       });
       if (!res.ok) throw new Error();
-      toast.success("设置已保存");
+      toast.success("设置已保存", {
+        description: apiKey ? "AI 快速模式已启用" : "AI 将使用服务端模式",
+      });
     } catch {
       toast.error("保存失败");
     } finally {
@@ -84,6 +91,25 @@ export function SettingsPage() {
           <SectionCard title="AI 模型配置" subtitle="GLM-4 大模型相关设置">
             <div className="space-y-4">
               <div className="space-y-2">
+                <Label className="flex items-center gap-2"><Key className="size-4" /> GLM API Key（推荐）</Label>
+                <Input
+                  type="password"
+                  value={apiKey}
+                  onChange={e => setApiKey(e.target.value)}
+                  placeholder="填写后 AI 调用更快（直连 GLM API）"
+                />
+                <p className="text-xs text-muted-foreground">
+                  获取地址：<a href="https://open.bigmodel.cn/usercenter/apikeys" target="_blank" rel="noopener" className="text-[#0071E3] hover:underline">open.bigmodel.cn</a>
+                  <br />填写后 AI 报告生成速度提升 3-5 倍（前端直调，无服务端中转）
+                </p>
+                {apiKey && (
+                  <div className="flex items-center gap-2 mt-2 px-3 py-2 rounded-lg bg-[#F0FFF4] border border-[#34C759]/20">
+                    <Zap className="size-4 text-[#34C759]" />
+                    <span className="text-xs text-[#34C759] font-medium">快速模式已启用</span>
+                  </div>
+                )}
+              </div>
+              <div className="space-y-2">
                 <Label className="flex items-center gap-2"><Bot className="size-4" /> AI 模型</Label>
                 <Input value={settings.aiModel || ""} onChange={e => update("aiModel", e.target.value)} placeholder="glm-4-plus" />
                 <p className="text-xs text-muted-foreground">支持 glm-4-plus / glm-4-air / glm-4-long等</p>
@@ -97,8 +123,8 @@ export function SettingsPage() {
                 <div className="flex items-center gap-2">
                   <CheckCircle2 className="size-5 text-[#34C759]" />
                   <div>
-                    <p className="text-sm font-medium">z-ai CLI 状态</p>
-                    <p className="text-xs text-muted-foreground">AI 服务连接检测</p>
+                    <p className="text-sm font-medium">AI 服务状态</p>
+                    <p className="text-xs text-muted-foreground">{apiKey ? "快速模式（前端直调 GLM API）" : "兼容模式（服务端 z-ai CLI）"}</p>
                   </div>
                 </div>
                 <Badge style={{ background: "#34C759", color: "#fff", border: "none" }}>

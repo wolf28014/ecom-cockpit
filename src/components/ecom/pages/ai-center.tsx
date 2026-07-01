@@ -7,9 +7,10 @@ import { Tabs, TabsList, TabsTrigger, TabsContent } from "@/components/ui/tabs";
 import { Button } from "@/components/ui/button";
 import { Textarea } from "@/components/ui/textarea";
 import { Badge } from "@/components/ui/badge";
-import { Sparkles, Send, Loader2, FileText, Bot, User } from "lucide-react";
+import { Sparkles, Send, Loader2, FileText, Bot, User, Zap } from "lucide-react";
 import ReactMarkdown from "react-markdown";
 import { toast } from "sonner";
+import { getApiKey, callGLMApi } from "@/lib/ai-client";
 
 const REPORT_TABS = [
   { key: "daily", label: "AI 经营日报", icon: "📊" },
@@ -25,6 +26,52 @@ const QUICK_QUESTIONS = [
   "应该增加广告预算吗？",
   "退款率为什么变高？",
 ];
+
+// 构造报告 prompt（前端直调模式用）
+function buildReportPrompt(reportType: string, data: any): string {
+  const today = data.today || {};
+  const week = data.week || {};
+  const month = data.month || {};
+  const natCum = data.naturalCumulative || {};
+  const progress = data.progress || {};
+
+  const progressStr = Object.entries(progress).map(([k, v]: any) =>
+    `${k}: 目标¥${v.target?.toLocaleString()} 已完成¥${Math.round(v.actual || 0).toLocaleString()} (${(v.rate * 100).toFixed(1)}%)`
+  ).join("\n");
+
+  const labels: Record<string, string> = {
+    daily: "今日经营日报",
+    weekly: "本周经营周报",
+    monthly: "本月经营月报",
+    suggestion: "今日经营建议（销售/推广/定价/库存/风险5维度）",
+  };
+
+  return `请生成【${labels[reportType] || reportType}】
+
+今日数据：
+- 销售额：¥${today.salesAmount?.toLocaleString() || 0}
+- 净销售额：¥${today.netSales?.toLocaleString() || 0}
+- 退款：¥${today.refundAmount?.toLocaleString() || 0}（退款率 ${(today.refundRate * 100).toFixed(1)}%）
+- 订单：${today.orderCount || 0} 单 / 访客 ${today.visitors || 0} 人
+- 推广费：¥${today.promotionTotal?.toLocaleString() || 0}（占比 ${(today.promotionRate * 100).toFixed(1)}%）
+- 投产比：${today.roi?.toFixed(2) || 0}
+- 转化率：${(today.conversionRate * 100).toFixed(2)}%
+
+本周：销售额¥${week.salesAmount?.toLocaleString() || 0} 净销售¥${week.netSales?.toLocaleString() || 0}
+本月：销售额¥${month.salesAmount?.toLocaleString() || 0} 净销售¥${month.netSales?.toLocaleString() || 0}
+
+自然年累积：
+- 累积销售额：¥${natCum.cumulativeSales?.toLocaleString() || 0}
+- 累积净销售额：¥${natCum.cumulativeNetSales?.toLocaleString() || 0}
+- 累积推广费：¥${natCum.cumulativePromotion?.toLocaleString() || 0}
+- 累积净推广费率：${(natCum.cumulativeNetPromotionRate * 100).toFixed(1)}%
+- 同比去年：${(natCum.yoyGrowth * 100).toFixed(1)}%
+
+利润目标进度：
+${progressStr || "暂未设置"}
+
+请用 Markdown 输出，包含核心数据回顾、趋势分析、异常诊断、行动建议。`;
+}
 
 interface ChatMsg { role: string; content: string; }
 
@@ -51,18 +98,61 @@ function ReportPanel({ storeId, reportType, label }: { storeId: string; reportTy
 
   const handleGenerate = async () => {
     setGenerating(true);
+    const apiKey = getApiKey();
+
     try {
-      const r = await fetch("/api/ai/report", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ storeId: storeId === "all" ? null : storeId, reportType }),
-      });
-      if (!r.ok) throw new Error();
-      const data = await r.json();
-      setReport(data);
-      toast.success(`${label}已生成`);
-    } catch {
-      toast.error("生成失败，请稍后重试");
+      if (apiKey) {
+        // 模式 A：前端直接调 GLM API（快）
+        // 1. 先获取经营数据
+        const sid = storeId === "all" ? "" : `&storeId=${storeId}`;
+        const dashRes = await fetch(`/api/dashboard?days=30${sid}`);
+        const dashData = await dashRes.json();
+
+        // 2. 构造 prompt
+        const today = dashData.today;
+        const prompt = buildReportPrompt(reportType, dashData);
+
+        const systemPrompt = "你是电商经营分析师，用 Markdown 输出经营报告，包含核心数据回顾、趋势分析、异常诊断、行动建议。涉及金额用人民币¥保留2位小数。";
+
+        // 3. 前端直调 GLM API
+        const content = await callGLMApi([
+          { role: "system", content: systemPrompt },
+          { role: "user", content: prompt },
+        ], apiKey);
+
+        // 4. 保存到数据库
+        const saveRes = await fetch("/api/ai/report", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({
+            storeId: storeId === "all" ? null : storeId,
+            reportType,
+            content, // 直接传内容，API 应跳过生成只保存
+            directSave: true,
+          }),
+        });
+        if (saveRes.ok) {
+          const data = await saveRes.json();
+          setReport(data);
+        } else {
+          // 保存失败也显示内容
+          setReport({ content, title: `AI ${label} - ${new Date().toISOString().slice(0,10)}`, createdAt: new Date().toISOString() });
+        }
+        toast.success(`${label}已生成（快速模式）`);
+      } else {
+        // 模式 B：服务端生成（兼容旧逻辑，需 z-ai CLI）
+        const r = await fetch("/api/ai/report", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ storeId: storeId === "all" ? null : storeId, reportType }),
+        });
+        if (!r.ok) throw new Error();
+        const data = await r.json();
+        setReport(data);
+        toast.success(`${label}已生成`);
+      }
+    } catch (e: any) {
+      toast.error("生成失败", { description: e.message?.slice(0, 100) });
     } finally {
       setGenerating(false);
     }

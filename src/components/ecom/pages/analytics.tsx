@@ -3,6 +3,8 @@
 import { useState, useEffect } from "react";
 import { KpiRow, SectionCard } from "@/components/ecom/kpi";
 import { StoreSelector, RefreshButton } from "@/components/ecom/store-selector";
+import { StoreMultiSelect } from "@/components/ecom/store-multi-select";
+import { DateRangePicker, type DateRange } from "@/components/ecom/date-range-picker";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { ToggleGroup, ToggleGroupItem } from "@/components/ui/toggle-group";
 import { Card, CardContent } from "@/components/ui/card";
@@ -15,21 +17,28 @@ import {
 const PIE_COLORS = ["#0071E3", "#34C759", "#FF9500", "#AF52DE", "#FF3B30", "#5856D6"];
 
 export function AnalyticsPage() {
-  const [storeId, setStoreId] = useState("all");
+  const [storeIds, setStoreIds] = useState<string[]>([]);
+  const [dateRange, setDateRange] = useState<DateRange>(() => {
+    const end = new Date();
+    const start = new Date();
+    start.setDate(start.getDate() - 29);
+    return { start: start.toISOString().slice(0, 10), end: end.toISOString().slice(0, 10) };
+  });
   const [data, setData] = useState<any>(null);
   const [loading, setLoading] = useState(true);
 
   const loadData = () => {
     setLoading(true);
-    const sid = storeId === "all" ? "" : `&storeId=${storeId}`;
-    fetch(`/api/analytics${sid}`)
+    const sidParam = storeIds.length > 0 ? `&storeIds=${storeIds.join(",")}` : "";
+    const rangeParam = `&start=${dateRange.start}&end=${dateRange.end}`;
+    fetch(`/api/analytics?${sidParam}${rangeParam}`)
       .then(r => r.json())
       .then(d => { setData(d); setLoading(false); })
       .catch(() => setLoading(false));
   };
 
   // eslint-disable-next-line react-hooks/set-state-in-effect
-  useEffect(() => { loadData(); }, [storeId]);
+  useEffect(() => { loadData(); }, [storeIds, dateRange]);
 
   const fmtMoney = (v: number) => `¥${(v || 0).toLocaleString(undefined, { maximumFractionDigits: 0 })}`;
   const fmtPct = (v: number) => `${(v * 100).toFixed(1)}%`;
@@ -41,8 +50,9 @@ export function AnalyticsPage() {
           <h1 className="text-2xl font-bold tracking-tight">经营分析中心</h1>
           <p className="text-sm text-muted-foreground mt-1">日 / 周 / 月 / 年 四档分析 · 自然年与季节年双轨</p>
         </div>
-        <div className="flex items-center gap-2">
-          <StoreSelector value={storeId} onChange={setStoreId} />
+        <div className="flex items-center gap-2 flex-wrap">
+          <StoreMultiSelect value={storeIds} onChange={setStoreIds} />
+          <DateRangePicker value={dateRange} onChange={setDateRange} />
           <RefreshButton onClick={loadData} loading={loading} />
         </div>
       </div>

@@ -12,6 +12,8 @@ import {
 } from "@/components/ui/dialog";
 import { Button } from "@/components/ui/button";
 import { LoginPage } from "@/components/ecom/login-page";
+import { ImportProgress } from "@/components/ecom/import-progress";
+import { QuickBackupButton } from "@/components/ecom/quick-backup";
 import { clearCacheByPrefix } from "@/lib/cache";
 
 import { DashboardPage } from "@/components/ecom/pages/dashboard";
@@ -373,6 +375,12 @@ function AppContent({
           {renderPage()}
         </div>
       </main>
+
+      {/* 全局导入进度浮窗 - 任何页面都可见 */}
+      <ImportProgress />
+
+      {/* 全局立即备份按钮 */}
+      <QuickBackupButton />
     </div>
   );
 }

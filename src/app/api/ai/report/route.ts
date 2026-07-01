@@ -23,9 +23,41 @@ export async function GET(req: NextRequest) {
   return NextResponse.json(reports);
 }
 
-// POST: 生成报告
+// POST: 生成报告（或前端直调后保存）
 export async function POST(req: NextRequest) {
-  const { storeId, reportType } = await req.json();
+  const body = await req.json();
+  const { storeId, reportType, content, directSave } = body;
+
+  // 模式 A：前端直调 GLM API 后，直接保存内容
+  if (directSave && content) {
+    const today = new Date();
+    const todayStr = today.toISOString().slice(0, 10);
+    const labels: Record<string, string> = {
+      daily: "经营日报", weekly: "经营周报", monthly: "经营月报", suggestion: "经营建议",
+    };
+    let summary = "";
+    for (const line of content.split("\n")) {
+      const s = line.trim();
+      if (s && !s.startsWith("#") && !s.startsWith("-")) {
+        summary = s.slice(0, 150);
+        break;
+      }
+    }
+    const report = await db.aiReport.create({
+      data: {
+        storeId: storeId || null,
+        reportType,
+        periodStart: today,
+        periodEnd: today,
+        title: `AI ${labels[reportType] || "报告"} - ${todayStr}`,
+        content,
+        summary,
+      },
+    });
+    return NextResponse.json(report);
+  }
+
+  // 模式 B：服务端生成（兼容旧逻辑）
   const sid = storeId || undefined;
 
   let userPrompt = "";

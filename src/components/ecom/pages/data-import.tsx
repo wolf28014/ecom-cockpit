@@ -16,6 +16,7 @@ import {
 } from "lucide-react";
 import * as XLSX from "xlsx";
 import { toast } from "sonner";
+import { importManager } from "@/lib/import-task";
 
 const TEMPLATE_HEADERS = [
   "日期", "销售额", "订单数", "退款金额", "退款订单数",
@@ -154,53 +155,77 @@ export function DataImportPage() {
   const handleImport = async () => {
     if (storeId === "all") { toast.error("请先选择店铺"); return; }
     if (previewData.length === 0) { toast.error("暂无数据"); return; }
+
+    // 获取店铺名
+    const storeName = document.querySelector("button[role='combobox']")?.textContent || "店铺";
+
+    // 创建导入任务（全局可见，即使离开页面也能看到进度）
+    const taskId = importManager.addTask(storeId, storeName, previewData.length);
     setImporting(true);
     let ok = 0, fail = 0;
     const updated = [...previewData];
-    for (let i = 0; i < updated.length; i++) {
-      const row = updated[i];
-      try {
-        const promotionData = { "通用推广": row.推广费 };
-        const costData = {
-          "商品成本": row.商品成本,
-          "运费": row.运费,
-          "包装": row.包装,
-          "人工": row.人工,
-          "房租": row.房租,
-          "其他": row.其他,
-        };
-        const res = await fetch("/api/data-entry", {
-          method: "POST",
-          headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({
-            storeId,
-            recordDate: row.日期,
-            salesAmount: row.销售额,
-            orderCount: row.订单数,
-            refundAmount: row.退款金额,
-            refundOrderCount: row.退款订单数,
-            promotionData,
-            costData,
-          }),
-        });
-        if (res.ok) {
-          ok++;
-          updated[i] = { ...row, _status: "ok" as const };
-        } else {
+
+    toast.success(`开始后台导入 ${previewData.length} 条数据`, {
+      description: "您可以继续操作其他页面，右上角显示进度",
+      duration: 3000,
+    });
+
+    // 后台异步执行，不阻塞 UI
+    (async () => {
+      for (let i = 0; i < updated.length; i++) {
+        const row = updated[i];
+        try {
+          const promotionData = { "通用推广": row.推广费 };
+          const costData = {
+            "商品成本": row.商品成本,
+            "运费": row.运费,
+            "包装": row.包装,
+            "人工": row.人工,
+            "房租": row.房租,
+            "其他": row.其他,
+          };
+          const res = await fetch("/api/data-entry", {
+            method: "POST",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify({
+              storeId,
+              recordDate: row.日期,
+              salesAmount: row.销售额,
+              orderCount: row.订单数,
+              refundAmount: row.退款金额,
+              refundOrderCount: row.退款订单数,
+              promotionData,
+              costData,
+            }),
+          });
+          if (res.ok) {
+            ok++;
+            updated[i] = { ...row, _status: "ok" as const };
+          } else {
+            fail++;
+            updated[i] = { ...row, _status: "error" as const, _msg: "保存失败" };
+          }
+        } catch {
           fail++;
-          updated[i] = { ...row, _status: "error" as const, _msg: "保存失败" };
+          updated[i] = { ...row, _status: "error" as const, _msg: "网络错误" };
         }
-      } catch {
-        fail++;
-        updated[i] = { ...row, _status: "error" as const, _msg: "网络错误" };
+        // 更新全局任务进度
+        importManager.updateProgress(taskId, ok, fail);
+        // 每 5 条更新一次本地 UI
+        if (i % 5 === 0 || i === updated.length - 1) {
+          setPreviewData([...updated]);
+          setImportedCount(ok);
+          setErrorCount(fail);
+        }
       }
-      setPreviewData([...updated]);
-      setImportedCount(ok);
-      setErrorCount(fail);
-    }
-    setImporting(false);
-    if (fail === 0) toast.success(`成功导入 ${ok} 条数据`);
-    else toast.warning(`完成：成功 ${ok}，失败 ${fail}`);
+      setImporting(false);
+      importManager.completeTask(taskId, fail === 0 ? "completed" : "failed");
+      if (fail === 0) {
+        toast.success(`导入完成：成功 ${ok} 条`, { description: "可前往「数据明细」查看" });
+      } else {
+        toast.warning(`导入完成：成功 ${ok}，失败 ${fail}`);
+      }
+    })();
   };
 
   return (
