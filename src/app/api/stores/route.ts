@@ -1,4 +1,5 @@
 import { NextRequest, NextResponse } from "next/server";
+import { invalidateCache } from "@/lib/server-cache";
 import { db } from "@/lib/db";
 import { getCurrentUser } from "@/lib/auth";
 
@@ -41,7 +42,7 @@ export async function POST(req: NextRequest) {
       userId: user.id,
     },
   });
-  return NextResponse.json(store);
+  invalidateCache("dash:"); invalidateCache("analytics:"); return NextResponse.json(store);
 }
 
 export async function PUT(req: NextRequest) {
@@ -60,7 +61,7 @@ export async function PUT(req: NextRequest) {
   }
 
   const updated = await db.store.update({ where: { id }, data });
-  return NextResponse.json(updated);
+  invalidateCache("dash:"); invalidateCache("analytics:"); return NextResponse.json(updated);
 }
 
 export async function DELETE(req: NextRequest) {
@@ -79,5 +80,5 @@ export async function DELETE(req: NextRequest) {
   }
 
   await db.store.delete({ where: { id } });
-  return NextResponse.json({ ok: true });
+  invalidateCache("dash:"); invalidateCache("analytics:"); return NextResponse.json({ ok: true });
 }

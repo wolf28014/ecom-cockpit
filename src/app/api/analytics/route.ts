@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from "next/server";
 import { getCurrentUserStoreIds } from "@/lib/auth";
 import { db } from "@/lib/db";
+import { getCache, setCache } from "@/lib/server-cache";
 
 export async function GET(req: NextRequest) {
   const userStoreIds = await getCurrentUserStoreIds();
@@ -23,6 +24,11 @@ export async function GET(req: NextRequest) {
   const monthMonth = parseInt(req.nextUrl.searchParams.get("monthMonth") || String(new Date().getMonth() + 1));
   const naturalYear = parseInt(req.nextUrl.searchParams.get("naturalYear") || String(new Date().getFullYear()));
   const seasonalYear = parseInt(req.nextUrl.searchParams.get("seasonalYear") || String(new Date().getFullYear()));
+
+  // 服务端内存缓存（30秒TTL）
+  const cacheKey = `analytics:${storeIdArray.join(",")}:${dayDate}:${monthYear}-${monthMonth}:N${naturalYear}:S${seasonalYear}`;
+  const cached = getCache(cacheKey);
+  if (cached) return NextResponse.json(cached);
 
   // 辅助：查指定日期范围的数据
   async function getRangeData(start: Date, end: Date) {
@@ -126,10 +132,12 @@ export async function GET(req: NextRequest) {
     getCumulative(seaStart, seaEnd),
   ]);
 
-  return NextResponse.json({
+  const result = {
     dayData, dayCumulative,
     monthData, monthCumulative,
     naturalYearData, naturalYearCumulative,
     seasonalYearData, seasonalYearCumulative,
-  });
+  };
+  setCache(cacheKey, result);
+  return NextResponse.json(result);
 }

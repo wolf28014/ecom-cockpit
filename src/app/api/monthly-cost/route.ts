@@ -1,4 +1,5 @@
 import { NextRequest, NextResponse } from "next/server";
+import { invalidateCache } from "@/lib/server-cache";
 import { db } from "@/lib/db";
 import { AnalyticsService, MONTHLY_COST_FIELDS } from "@/lib/analytics";
 
@@ -39,7 +40,7 @@ export async function POST(req: NextRequest) {
   if (body.note !== undefined) data.note = body.note;
 
   const saved = await AnalyticsService.saveMonthlyCost(data);
-  return NextResponse.json(saved);
+  invalidateCache("profit:"); return NextResponse.json(saved);
 }
 
 // 字段定义

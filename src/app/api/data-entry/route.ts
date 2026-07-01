@@ -2,6 +2,7 @@ import { NextRequest, NextResponse } from "next/server";
 import { db } from "@/lib/db";
 import { PROMOTION_FIELDS } from "@/lib/analytics";
 import { getCurrentUser, getCurrentUserStoreIds } from "@/lib/auth";
+import { invalidateCache } from "@/lib/server-cache";
 
 // GET: 查询指定店铺某日数据；或最近 N 天列表
 export async function GET(req: NextRequest) {
@@ -125,11 +126,15 @@ export async function POST(req: NextRequest) {
       where: { id: existing.id },
       data,
     });
+    invalidateCache("dash:"); // 清除首页缓存
+    invalidateCache("analytics:"); // 清除分析缓存
     return NextResponse.json(updated);
   } else {
     const created = await db.dailyRecord.create({
       data: { storeId, recordDate: date, ...data },
     });
+    invalidateCache("dash:");
+    invalidateCache("analytics:");
     return NextResponse.json(created);
   }
 }

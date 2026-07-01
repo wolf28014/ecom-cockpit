@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from "next/server";
 import { getCurrentUserStoreIds } from "@/lib/auth";
 import { db } from "@/lib/db";
+import { getCache, setCache } from "@/lib/server-cache";
 
 /**
  * 利润计算 API
@@ -34,6 +35,11 @@ export async function GET(req: NextRequest) {
   const monthMonth = parseInt(req.nextUrl.searchParams.get("monthMonth") || String(new Date().getMonth() + 1));
   const naturalYear = parseInt(req.nextUrl.searchParams.get("naturalYear") || String(new Date().getFullYear()));
   const seasonalYear = parseInt(req.nextUrl.searchParams.get("seasonalYear") || String(new Date().getFullYear()));
+
+  // 服务端内存缓存（30秒TTL）
+  const cacheKey = `profit:${storeIdArray.join(",")}:${dayDate}:${monthYear}-${monthMonth}:N${naturalYear}:S${seasonalYear}`;
+  const cached = getCache(cacheKey);
+  if (cached) return NextResponse.json(cached);
 
   const today = new Date();
 
@@ -155,10 +161,12 @@ export async function GET(req: NextRequest) {
   const seaActualEnd = (seasonalYear < today.getFullYear() || (seasonalYear === today.getFullYear() && today.getMonth() < 6)) ? seaEnd : today;
   const seasonalYearProfit = await getProfitData(seaStart, seaActualEnd);
 
-  return NextResponse.json({
+  const result = {
     dayProfit,
     monthProfit,
     naturalYearProfit,
     seasonalYearProfit,
-  });
+  };
+  setCache(cacheKey, result);
+  return NextResponse.json(result);
 }
