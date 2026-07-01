@@ -1,8 +1,9 @@
 "use client";
 
-import { useState, useEffect } from "react";
+import { useState } from "react";
 import { KpiRow, SectionCard } from "@/components/ecom/kpi";
 import { StoreSelector, RefreshButton, useStores } from "@/components/ecom/store-selector";
+import { useCachedFetch } from "@/lib/use-cached-fetch";
 import { Tabs, TabsList, TabsTrigger, TabsContent } from "@/components/ui/tabs";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
@@ -40,10 +41,13 @@ export function SkuPage() {
   const { stores } = useStores();
   const [storeId, setStoreId] = useState("all");
   const [days, setDays] = useState(30);
-  const [data, setData] = useState<any>(null);
-  const [loading, setLoading] = useState(true);
   const [showAddDialog, setShowAddDialog] = useState(false);
   const [clearing, setClearing] = useState(false);
+
+  const sid = storeId === "all" ? "" : `&storeId=${storeId}`;
+  const url = `/api/sku?${sid.slice(1)}&days=${days}`;
+  const cacheKey = `ecom:sku:${storeId}:${days}`;
+  const { data, loading, refresh } = useCachedFetch(url, cacheKey);
 
   // 新增 SKU 表单
   const [newSku, setNewSku] = useState({
@@ -55,17 +59,6 @@ export function SkuPage() {
     unitPrice: 0,
     stock: 0,
   });
-
-  const loadData = () => {
-    setLoading(true);
-    const sid = storeId === "all" ? "" : `&storeId=${storeId}`;
-    fetch(`/api/sku?${sid.slice(1)}&days=${days}`)
-      .then(r => r.json())
-      .then(d => { setData(d); setLoading(false); })
-      .catch(() => { toast.error("加载失败"); setLoading(false); });
-  };
-
-  useEffect(() => { loadData(); }, [storeId, days]);
 
   // 新增 SKU
   const handleAddSku = async () => {
@@ -83,7 +76,7 @@ export function SkuPage() {
         toast.success("SKU 添加成功");
         setShowAddDialog(false);
         setNewSku({ storeId: "", skuCode: "", skuName: "", category: "", unitCost: 0, unitPrice: 0, stock: 0 });
-        loadData();
+        refresh();
       } else {
         const d = await res.json();
         toast.error(d.error || "添加失败");
@@ -100,7 +93,7 @@ export function SkuPage() {
       const res = await fetch(`/api/sku-manage?id=${skuId}`, { method: "DELETE" });
       if (res.ok) {
         toast.success("已删除");
-        loadData();
+        refresh();
       } else {
         toast.error("删除失败");
       }
@@ -118,7 +111,7 @@ export function SkuPage() {
       const res = await fetch(`/api/sku-manage?all=true${storeIdParam}`, { method: "DELETE" });
       if (res.ok) {
         toast.success("已清空所有 SKU 数据");
-        loadData();
+        refresh();
       } else {
         toast.error("清空失败");
       }
@@ -246,7 +239,7 @@ export function SkuPage() {
               <SelectItem value="90">近 90 天</SelectItem>
             </SelectContent>
           </Select>
-          <RefreshButton onClick={loadData} loading={loading} />
+          <RefreshButton onClick={refresh} loading={loading} />
           <Dialog open={showAddDialog} onOpenChange={setShowAddDialog}>
             <DialogTrigger asChild>
               <Button size="sm" variant="outline"><Plus className="size-4 mr-1" /> 添加 SKU</Button>

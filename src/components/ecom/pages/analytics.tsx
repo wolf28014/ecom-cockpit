@@ -1,12 +1,13 @@
 "use client";
 
-import { useState, useEffect } from "react";
+import { useState } from "react";
 import { KpiRow, SectionCard } from "@/components/ecom/kpi";
 import { StoreSelector, RefreshButton } from "@/components/ecom/store-selector";
 import { StoreMultiSelect } from "@/components/ecom/store-multi-select";
 import { DateRangePicker, type DateRange } from "@/components/ecom/date-range-picker";
 import { YearTypeSelector } from "@/components/ecom/year-type-selector";
 import { DataDetailTable } from "@/components/ecom/data-detail-table";
+import { useCachedFetch } from "@/lib/use-cached-fetch";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { ToggleGroup, ToggleGroupItem } from "@/components/ui/toggle-group";
 import { Card, CardContent } from "@/components/ui/card";
@@ -26,21 +27,12 @@ export function AnalyticsPage() {
     start.setDate(start.getDate() - 29);
     return { start: start.toISOString().slice(0, 10), end: end.toISOString().slice(0, 10) };
   });
-  const [data, setData] = useState<any>(null);
-  const [loading, setLoading] = useState(true);
 
-  const loadData = () => {
-    setLoading(true);
-    const sidParam = storeIds.length > 0 ? `&storeIds=${storeIds.join(",")}` : "";
-    const rangeParam = `&start=${dateRange.start}&end=${dateRange.end}`;
-    fetch(`/api/analytics?${sidParam}${rangeParam}`)
-      .then(r => r.json())
-      .then(d => { setData(d); setLoading(false); })
-      .catch(() => setLoading(false));
-  };
-
-  // eslint-disable-next-line react-hooks/set-state-in-effect
-  useEffect(() => { loadData(); }, [storeIds, dateRange]);
+  const sidParam = storeIds.length > 0 ? `&storeIds=${storeIds.join(",")}` : "";
+  const rangeParam = `&start=${dateRange.start}&end=${dateRange.end}`;
+  const url = `/api/analytics?${sidParam}${rangeParam}`;
+  const cacheKey = `ecom:analytics:${storeIds.join(",") || "all"}:${dateRange.start}:${dateRange.end}`;
+  const { data, loading, refresh } = useCachedFetch(url, cacheKey);
 
   const fmtMoney = (v: number) => `¥${(v || 0).toLocaleString(undefined, { maximumFractionDigits: 0 })}`;
   const fmtPct = (v: number) => `${(v * 100).toFixed(1)}%`;
@@ -55,7 +47,7 @@ export function AnalyticsPage() {
         <div className="flex items-center gap-2 flex-wrap">
           <StoreMultiSelect value={storeIds} onChange={setStoreIds} />
           <DateRangePicker value={dateRange} onChange={setDateRange} />
-          <RefreshButton onClick={loadData} loading={loading} />
+          <RefreshButton onClick={refresh} loading={loading} />
         </div>
       </div>
 

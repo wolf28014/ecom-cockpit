@@ -1,6 +1,6 @@
 "use client";
 
-import { useState, useEffect, useCallback } from "react";
+import { useState } from "react";
 import { KpiRow, SectionCard } from "@/components/ecom/kpi";
 import { RefreshButton } from "@/components/ecom/store-selector";
 import { StoreMultiSelect } from "@/components/ecom/store-multi-select";
@@ -12,7 +12,7 @@ import {
   ComposedChart, Legend, Area, AreaChart,
 } from "recharts";
 import { Progress } from "@/components/ui/progress";
-import { getCached, setCached, clearCacheByPrefix } from "@/lib/cache";
+import { useCachedFetch } from "@/lib/use-cached-fetch";
 import { DateRangePicker, type DateRange } from "@/components/ecom/date-range-picker";
 
 const PIE_COLORS = ["#0071E3", "#34C759", "#FF9500", "#AF52DE", "#FF3B30", "#5856D6", "#FF2D55"];
@@ -20,42 +20,12 @@ const PIE_COLORS = ["#0071E3", "#34C759", "#FF9500", "#AF52DE", "#FF3B30", "#585
 export function DashboardPage() {
   const [storeIds, setStoreIds] = useState<string[]>([]);
   const [yearType, setYearType] = useState<"natural" | "seasonal">("natural");
-  const [data, setData] = useState<any>(null);
-  const [loading, setLoading] = useState(true);
 
-  const loadData = useCallback((force = false) => {
-    const sidParam = storeIds.length > 0 ? `&storeIds=${storeIds.join(",")}` : "";
-    const url = `/api/dashboard?days=30${sidParam}`;
-    const cacheKey = `ecom:dashboard:${storeIds.join(",") || "all"}`;
+  const sidParam = storeIds.length > 0 ? `&storeIds=${storeIds.join(",")}` : "";
+  const url = `/api/dashboard?days=30${sidParam}`;
+  const { data, loading, refresh } = useCachedFetch(url, `ecom:dashboard:${storeIds.join(",") || "all"}`);
 
-    // 先尝试缓存（5分钟内有效）
-    if (!force) {
-      const cached = getCached<any>(cacheKey);
-      if (cached) {
-        setData(cached);
-        setLoading(false);
-        return; // 有缓存就不显示 loading，后台静默刷新
-      }
-    }
-
-    setLoading(true);
-    fetch(url)
-      .then(r => r.json())
-      .then(d => {
-        setData(d);
-        setLoading(false);
-        setCached(cacheKey, d);
-      })
-      .catch(() => setLoading(false));
-  }, [storeIds]);
-
-  // eslint-disable-next-line react-hooks/set-state-in-effect
-  useEffect(() => { loadData(); }, [loadData]);
-
-  const handleRefresh = () => {
-    clearCacheByPrefix("ecom:dashboard:");
-    loadData(true);
-  };
+  const handleRefresh = () => refresh();
 
   const today = data?.today;
   const trend = data?.trend || [];

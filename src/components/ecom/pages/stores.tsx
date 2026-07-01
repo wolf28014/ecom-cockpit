@@ -23,6 +23,7 @@ import {
 } from "recharts";
 import { Plus, Pencil, Trash2, Store as StoreIcon } from "lucide-react";
 import { toast } from "sonner";
+import { getCached, setCached, clearCacheByPrefix } from "@/lib/cache";
 
 const PLATFORM_LABELS: Record<string, string> = {
   taobao: "淘宝店",
@@ -67,11 +68,18 @@ export function StoresPage() {
   const [compareLoading, setCompareLoading] = useState(false);
 
   const loadStores = () => {
-    setLoading(true);
+    // 先尝试缓存
+    const cached = getCached<StoreItem[]>("ecom:stores");
+    if (cached) {
+      setStores(cached);
+      setLoading(false);
+    } else {
+      setLoading(true);
+    }
     fetch("/api/stores")
       .then(r => r.json())
-      .then(data => { setStores(data); setLoading(false); })
-      .catch(() => { toast.error("加载店铺列表失败"); setLoading(false); });
+      .then(data => { setStores(data); setLoading(false); setCached("ecom:stores", data); })
+      .catch(() => { if (!cached) toast.error("加载店铺列表失败"); setLoading(false); });
   };
 
   const loadCompare = async () => {
@@ -132,7 +140,7 @@ export function StoresPage() {
       if (!res.ok) throw new Error();
       toast.success(form.id ? "店铺已更新" : "店铺已创建");
       setDialogOpen(false);
-      loadStores();
+      clearCacheByPrefix("ecom:stores"); loadStores();
     } catch {
       toast.error("保存失败");
     } finally {
@@ -148,7 +156,7 @@ export function StoresPage() {
         body: JSON.stringify({ id: s.id, isActive: !s.isActive }),
       });
       toast.success(s.isActive ? "已停用" : "已启用");
-      loadStores();
+      clearCacheByPrefix("ecom:stores"); loadStores();
     } catch {
       toast.error("操作失败");
     }
@@ -159,7 +167,7 @@ export function StoresPage() {
     try {
       await fetch(`/api/stores?id=${s.id}`, { method: "DELETE" });
       toast.success("已删除");
-      loadStores();
+      clearCacheByPrefix("ecom:stores"); loadStores();
     } catch {
       toast.error("删除失败");
     }
