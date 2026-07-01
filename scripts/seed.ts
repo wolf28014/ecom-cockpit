@@ -77,7 +77,8 @@ async function main() {
 
   // 0. 创建默认用户（demo@ecom.com / demo123）
   const crypto = await import("crypto");
-  const passwordHash = crypto.createHash("sha256").update("demo123").digest("hex");
+  const salt = "ecom-cockpit-pro-2026";
+  const passwordHash = crypto.createHash("sha256").update(salt + "demo123").digest("hex");
   const defaultUser = await db.user.create({
     data: {
       email: "demo@ecom.com",
