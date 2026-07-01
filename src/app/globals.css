@@ -122,3 +122,53 @@
     @apply bg-background text-foreground;
   }
 }
+
+/* ============== 移动端优化 ============== */
+
+/* 触摸目标最小 44px（iOS 规范） */
+@media (max-width: 1024px) {
+  button, [role="button"], a {
+    min-height: 44px;
+    min-width: 44px;
+  }
+
+  /* 表单输入框更大 */
+  input, select, textarea {
+    min-height: 44px;
+    font-size: 16px; /* iOS 防止缩放 */
+  }
+
+  /* 卡片间距更紧凑 */
+  .space-y-6 > * + * {
+    margin-top: 1rem;
+  }
+}
+
+/* 底部 Tab 栏安全区域 */
+nav.fixed.bottom-0 {
+  padding-bottom: env(safe-area-inset-bottom, 0px);
+}
+
+/* 防止移动端横向溢出 */
+html, body {
+  overflow-x: hidden;
+  -webkit-overflow-scrolling: touch;
+}
+
+/* 移动端表格优化 */
+@media (max-width: 768px) {
+  table {
+    font-size: 12px;
+  }
+  th, td {
+    padding: 6px 8px;
+  }
+}
+
+/* PWA 模式隐藏滚动条但保留滚动 */
+@media (display-mode: standalone) {
+  body {
+    user-select: none;
+    -webkit-user-select: none;
+  }
+}

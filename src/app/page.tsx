@@ -200,8 +200,8 @@ function AppContent({
 
   return (
     <div className="flex min-h-screen bg-[#F5F5F7]">
-      {/* Sidebar */}
-      <aside className="fixed left-0 top-0 bottom-0 w-60 bg-white border-r border-[#E5E5EA] flex flex-col z-40">
+      {/* PC 侧边栏 — 仅 lg 以上显示 */}
+      <aside className="hidden lg:flex fixed left-0 top-0 bottom-0 w-60 bg-white border-r border-[#E5E5EA] flex-col z-40">
         {/* Logo */}
         <div className="px-5 py-5 border-b border-[#E5E5EA]">
           <div className="flex items-center gap-2">
@@ -353,22 +353,58 @@ function AppContent({
       </Dialog>
 
       {/* Main */}
-      <main className="flex-1 ml-60 min-h-screen">
-        <div className="max-w-[1400px] mx-auto p-6 lg:p-8">
-          {/* Breadcrumb / Page title (hidden on dashboard, since pages render their own) */}
-          <div className="lg:hidden mb-4">
-            <h1 className="text-2xl font-bold tracking-tight">{PAGE_TITLES[activePage].title}</h1>
-            <p className="text-sm text-muted-foreground mt-1">{PAGE_TITLES[activePage].subtitle}</p>
+      <main className="flex-1 lg:ml-60 min-h-screen pb-20 lg:pb-0">
+        <div className="max-w-[1400px] mx-auto p-4 lg:p-8">
+          {/* 移动端标题 */}
+          <div className="lg:hidden mb-4 flex items-center justify-between">
+            <div>
+              <h1 className="text-xl font-bold tracking-tight">{PAGE_TITLES[activePage].title}</h1>
+              <p className="text-xs text-muted-foreground mt-0.5">{PAGE_TITLES[activePage].subtitle}</p>
+            </div>
+            <button
+              onClick={onLogout}
+              className="size-9 rounded-full bg-[#F5F5F7] flex items-center justify-center text-muted-foreground"
+              title="退出登录"
+            >
+              <LogOut className="size-4" />
+            </button>
           </div>
           {renderPage()}
         </div>
       </main>
 
+      {/* 移动端底部 Tab 栏 — 仅 lg 以下显示 */}
+      <nav className="lg:hidden fixed bottom-0 left-0 right-0 bg-white/90 backdrop-blur-lg border-t border-[#E5E5EA] z-40"
+        style={{ paddingBottom: "env(safe-area-inset-bottom)" }}
+      >
+        <div className="flex items-center justify-around px-1 py-1">
+          {NAV_ITEMS.map(item => {
+            const Icon = item.icon;
+            const active = activePage === item.key;
+            return (
+              <button
+                key={item.key}
+                onClick={() => setActivePage(item.key)}
+                className={cn(
+                  "flex flex-col items-center gap-0.5 px-2 py-1.5 rounded-lg transition-colors min-w-[44px] min-h-[44px]",
+                  active ? "text-[#0071E3]" : "text-muted-foreground"
+                )}
+              >
+                <Icon className="size-5" />
+                <span className="text-[10px] font-medium">{item.label}</span>
+              </button>
+            );
+          })}
+        </div>
+      </nav>
+
       {/* 全局导入进度浮窗 - 任何页面都可见 */}
       <ImportProgress />
 
-      {/* 全局立即备份按钮 */}
-      <QuickBackupButton />
+      {/* 全局立即备份按钮 - 仅 PC 端 */}
+      <div className="hidden lg:block">
+        <QuickBackupButton />
+      </div>
     </div>
   );
 }
