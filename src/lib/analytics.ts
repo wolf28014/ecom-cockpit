@@ -418,15 +418,16 @@ export class AnalyticsService {
     const month = today.getMonth() + 1;
     const quarter = Math.floor((month - 1) / 3) + 1;
 
-    // 单店铺时按 storeId 查目标；多店铺或全店铺时只查 storeId 为 null 的全局目标
+    // 单店铺时按 storeId 查目标；多店铺或全店铺时不返回目标（避免查 null 报错）
     const targetStoreId = typeof storeFilter === "string" ? storeFilter : undefined;
+    if (!targetStoreId) {
+      return {}; // 多店铺场景暂不支持利润目标查询
+    }
 
     const result: Record<string, any> = {};
 
     const yearlyTarget = await db.profitTarget.findFirst({
-      where: targetStoreId
-        ? { targetType: "yearly", targetYear: year, storeId: targetStoreId }
-        : { targetType: "yearly", targetYear: year, storeId: null },
+      where: { targetType: "yearly", targetYear: year, storeId: targetStoreId },
     });
     if (yearlyTarget) {
       const yearSummary = await this.getNaturalYearSummary(storeFilter);
@@ -439,9 +440,7 @@ export class AnalyticsService {
     }
 
     const quarterlyTarget = await db.profitTarget.findFirst({
-      where: targetStoreId
-        ? { targetType: "quarterly", targetYear: year, targetQuarter: quarter, storeId: targetStoreId }
-        : { targetType: "quarterly", targetYear: year, targetQuarter: quarter, storeId: null },
+      where: { targetType: "quarterly", targetYear: year, targetQuarter: quarter, storeId: targetStoreId },
     });
     if (quarterlyTarget) {
       const quarterStartMonth = (quarter - 1) * 3 + 1;
@@ -456,9 +455,7 @@ export class AnalyticsService {
     }
 
     const monthlyTarget = await db.profitTarget.findFirst({
-      where: targetStoreId
-        ? { targetType: "monthly", targetYear: year, targetMonth: month, storeId: targetStoreId }
-        : { targetType: "monthly", targetYear: year, targetMonth: month, storeId: null },
+      where: { targetType: "monthly", targetYear: year, targetMonth: month, storeId: targetStoreId },
     });
     if (monthlyTarget) {
       const monthSummary = await this.getMonthSummary(storeFilter);
