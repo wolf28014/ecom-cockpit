@@ -185,21 +185,48 @@ function AppContent({
   };
 
   const renderPage = () => {
-    switch (activePage) {
-      case "dashboard": return <DashboardPage />;
-      case "stores": return <StoresPage />;
-      case "data-entry": return <DataEntryPage />;
-      case "data-import": return <DataImportPage />;
-      case "analytics": return <AnalyticsPage />;
-      case "ai-center": return <AiCenterPage />;
-      case "profit-target": return <ProfitTargetPage />;
-      case "cashflow": return <CashflowPage />;
-      case "sku": return <SkuPage />;
-      case "reports": return <ReportsPage />;
-      case "settings": return <SettingsPage />;
-      case "backup": return <BackupPage />;
-      default: return <DashboardPage />;
-    }
+    // 所有页面都渲染，通过 display 控制显隐
+    // 这样切换页面时不会卸载组件，保留状态和数据
+    return (
+      <>
+        <div style={{ display: activePage === "dashboard" ? "block" : "none" }}>
+          <DashboardPage />
+        </div>
+        <div style={{ display: activePage === "stores" ? "block" : "none" }}>
+          <StoresPage />
+        </div>
+        <div style={{ display: activePage === "data-entry" ? "block" : "none" }}>
+          <DataEntryPage />
+        </div>
+        <div style={{ display: activePage === "data-import" ? "block" : "none" }}>
+          <DataImportPage />
+        </div>
+        <div style={{ display: activePage === "analytics" ? "block" : "none" }}>
+          <AnalyticsPage />
+        </div>
+        <div style={{ display: activePage === "ai-center" ? "block" : "none" }}>
+          <AiCenterPage />
+        </div>
+        <div style={{ display: activePage === "profit-target" ? "block" : "none" }}>
+          <ProfitTargetPage />
+        </div>
+        <div style={{ display: activePage === "cashflow" ? "block" : "none" }}>
+          <CashflowPage />
+        </div>
+        <div style={{ display: activePage === "sku" ? "block" : "none" }}>
+          <SkuPage />
+        </div>
+        <div style={{ display: activePage === "reports" ? "block" : "none" }}>
+          <ReportsPage />
+        </div>
+        <div style={{ display: activePage === "settings" ? "block" : "none" }}>
+          <SettingsPage />
+        </div>
+        <div style={{ display: activePage === "backup" ? "block" : "none" }}>
+          <BackupPage />
+        </div>
+      </>
+    );
   };
 
   const grouped = NAV_ITEMS.reduce((acc, item) => {

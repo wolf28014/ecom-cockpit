@@ -13,11 +13,14 @@ import {
   Bot, Clock, Building2, AlertTriangle, Save, Loader2, CheckCircle2, Key, Zap,
 } from "lucide-react";
 import { toast } from "sonner";
-import { getApiKey, saveApiKey } from "@/lib/ai-client";
+import { getApiKey, saveApiKey, getApiBaseUrl, saveApiBaseUrl, getAiModel, saveAiModel, AI_PROVIDERS } from "@/lib/ai-client";
 
 export function SettingsPage() {
   const [settings, setSettings] = useState<Record<string, string>>({});
   const [apiKey, setApiKey] = useState("");
+  const [apiBaseUrl, setApiBaseUrl] = useState("");
+  const [aiModel, setAiModel] = useState("");
+  const [selectedProvider, setSelectedProvider] = useState("glm");
   const [loading, setLoading] = useState(true);
   const [saving, setSaving] = useState(false);
 
@@ -38,6 +41,12 @@ export function SettingsPage() {
           promotionRateMax: d.promotionRateMax || "25",
         });
         setApiKey(getApiKey());
+        setApiBaseUrl(getApiBaseUrl());
+        setAiModel(getAiModel());
+        // 检测当前是哪个提供商
+        const currentUrl = getApiBaseUrl();
+        const provider = AI_PROVIDERS.find(p => p.baseUrl === currentUrl);
+        setSelectedProvider(provider?.id || "custom");
         setLoading(false);
       })
       .catch(() => { toast.error("加载设置失败"); setLoading(false); });
@@ -48,9 +57,9 @@ export function SettingsPage() {
   const handleSave = async () => {
     setSaving(true);
     try {
-      // 保存 API Key 到 localStorage
       saveApiKey(apiKey);
-      // 保存其他设置到数据库
+      saveApiBaseUrl(apiBaseUrl);
+      saveAiModel(aiModel);
       const res = await fetch("/api/settings", {
         method: "PUT",
         headers: { "Content-Type": "application/json" },
@@ -58,12 +67,23 @@ export function SettingsPage() {
       });
       if (!res.ok) throw new Error();
       toast.success("设置已保存", {
-        description: apiKey ? "AI 快速模式已启用" : "AI 将使用服务端模式",
+        description: apiKey ? `AI 快速模式已启用（${aiModel || '默认模型'}）` : "AI 将使用服务端模式",
       });
     } catch {
       toast.error("保存失败");
     } finally {
       setSaving(false);
+    }
+  };
+
+  // 选择 AI 提供商时自动填充 Base URL 和模型
+  const selectProvider = (providerId: string) => {
+    setSelectedProvider(providerId);
+    if (providerId === "custom") return;
+    const provider = AI_PROVIDERS.find(p => p.id === providerId);
+    if (provider) {
+      setApiBaseUrl(provider.baseUrl);
+      setAiModel(provider.defaultModel);
     }
   };
 
@@ -88,43 +108,80 @@ export function SettingsPage() {
       ) : (
         <div className="grid grid-cols-1 lg:grid-cols-2 gap-4">
           {/* AI 配置 */}
-          <SectionCard title="AI 模型配置" subtitle="GLM-4 大模型相关设置">
+          <SectionCard title="AI 模型配置" subtitle="支持智谱/DeepSeek/Kimi/通义千问/OpenAI">
             <div className="space-y-4">
+              {/* AI 提供商选择 */}
               <div className="space-y-2">
-                <Label className="flex items-center gap-2"><Key className="size-4" /> GLM API Key（推荐）</Label>
+                <Label className="flex items-center gap-2"><Zap className="size-4" /> AI 服务商</Label>
+                <div className="grid grid-cols-2 gap-2">
+                  {AI_PROVIDERS.map(p => (
+                    <button
+                      key={p.id}
+                      onClick={() => selectProvider(p.id)}
+                      className={`px-3 py-2 text-xs rounded-lg border text-left transition-colors ${
+                        selectedProvider === p.id
+                          ? "border-[#0071E3] bg-[#F0F7FF] text-[#0071E3] font-medium"
+                          : "border-border hover:bg-[#F5F5F7]"
+                      }`}
+                    >
+                      {p.name}
+                      <p className="text-[10px] text-muted-foreground mt-0.5">{p.note}</p>
+                    </button>
+                  ))}
+                </div>
+              </div>
+
+              {/* API Key */}
+              <div className="space-y-2">
+                <Label className="flex items-center gap-2"><Key className="size-4" /> API Key</Label>
                 <Input
                   type="password"
                   value={apiKey}
                   onChange={e => setApiKey(e.target.value)}
-                  placeholder="填写后 AI 调用更快（直连 GLM API）"
+                  placeholder="填写后 AI 调用更快（前端直调）"
                 />
-                <p className="text-xs text-muted-foreground">
-                  获取地址：<a href="https://open.bigmodel.cn/usercenter/apikeys" target="_blank" rel="noopener" className="text-[#0071E3] hover:underline">open.bigmodel.cn</a>
-                  <br />填写后 AI 报告生成速度提升 3-5 倍（前端直调，无服务端中转）
-                </p>
-                {apiKey && (
-                  <div className="flex items-center gap-2 mt-2 px-3 py-2 rounded-lg bg-[#F0FFF4] border border-[#34C759]/20">
-                    <Zap className="size-4 text-[#34C759]" />
-                    <span className="text-xs text-[#34C759] font-medium">快速模式已启用</span>
-                  </div>
+                {selectedProvider !== "custom" && (
+                  <p className="text-xs text-muted-foreground">
+                    获取 Key：<a href={AI_PROVIDERS.find(p => p.id === selectedProvider)?.getKeyUrl} target="_blank" rel="noopener" className="text-[#0071E3] hover:underline">{AI_PROVIDERS.find(p => p.id === selectedProvider)?.getKeyUrl}</a>
+                  </p>
                 )}
               </div>
+
+              {/* Base URL */}
               <div className="space-y-2">
-                <Label className="flex items-center gap-2"><Bot className="size-4" /> AI 模型</Label>
-                <Input value={settings.aiModel || ""} onChange={e => update("aiModel", e.target.value)} placeholder="glm-4-plus" />
-                <p className="text-xs text-muted-foreground">支持 glm-4-plus / glm-4-air / glm-4-long等</p>
+                <Label className="flex items-center gap-2"><Bot className="size-4" /> API Base URL</Label>
+                <Input
+                  value={apiBaseUrl}
+                  onChange={e => { setApiBaseUrl(e.target.value); setSelectedProvider("custom"); }}
+                  placeholder="https://open.bigmodel.cn/api/paas/v4/chat/completions"
+                />
+                <p className="text-xs text-muted-foreground">选择服务商自动填充，也可自定义</p>
               </div>
+
+              {/* 模型 */}
               <div className="space-y-2">
-                <Label className="flex items-center gap-2"><Clock className="size-4" /> 请求超时（秒）</Label>
-                <Input type="number" value={settings.aiTimeout || ""} onChange={e => update("aiTimeout", e.target.value)} />
-                <p className="text-xs text-muted-foreground">长文本分析建议设置 60-120 秒</p>
+                <Label className="flex items-center gap-2"><Bot className="size-4" /> 模型名</Label>
+                <Input
+                  value={aiModel}
+                  onChange={e => setAiModel(e.target.value)}
+                  placeholder="glm-4-plus"
+                />
+                {selectedProvider !== "custom" && (
+                  <p className="text-xs text-muted-foreground">
+                    可选：{AI_PROVIDERS.find(p => p.id === selectedProvider)?.models.join(" / ")}
+                  </p>
+                )}
               </div>
+
+              {/* 状态指示 */}
               <div className="flex items-center justify-between rounded-lg border p-3 bg-[#E8F8EC]/50">
                 <div className="flex items-center gap-2">
                   <CheckCircle2 className="size-5 text-[#34C759]" />
                   <div>
                     <p className="text-sm font-medium">AI 服务状态</p>
-                    <p className="text-xs text-muted-foreground">{apiKey ? "快速模式（前端直调 GLM API）" : "兼容模式（服务端 z-ai CLI）"}</p>
+                    <p className="text-xs text-muted-foreground">
+                      {apiKey ? `快速模式（${aiModel || '默认模型'}）` : "兼容模式（服务端 z-ai CLI）"}
+                    </p>
                   </div>
                 </div>
                 <Badge style={{ background: "#34C759", color: "#fff", border: "none" }}>

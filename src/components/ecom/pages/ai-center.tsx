@@ -73,6 +73,26 @@ ${progressStr || "暂未设置"}
 请用 Markdown 输出，包含核心数据回顾、趋势分析、异常诊断、行动建议。`;
 }
 
+// 构造老板助手的数据上下文
+function buildDataContext(data: any): string {
+  const today = data.today || {};
+  const week = data.week || {};
+  const month = data.month || {};
+  const natCum = data.naturalCumulative || {};
+  return `今日数据：
+- 销售额：¥${today.salesAmount?.toLocaleString() || 0}
+- 净销售额：¥${today.netSales?.toLocaleString() || 0}
+- 退款：¥${today.refundAmount?.toLocaleString() || 0}（退款率 ${(today.refundRate * 100).toFixed(1)}%）
+- 订单：${today.orderCount || 0} 单 / 访客 ${today.visitors || 0} 人
+- 推广费：¥${today.promotionTotal?.toLocaleString() || 0}（占比 ${(today.promotionRate * 100).toFixed(1)}%）
+- 投产比：${today.roi?.toFixed(2) || 0}
+- 转化率：${(today.conversionRate * 100).toFixed(2)}%
+
+本周：销售额¥${week.salesAmount?.toLocaleString() || 0} 净销售¥${week.netSales?.toLocaleString() || 0}
+本月：销售额¥${month.salesAmount?.toLocaleString() || 0} 净销售¥${month.netSales?.toLocaleString() || 0}
+自然年累积：销售额¥${natCum.cumulativeSales?.toLocaleString() || 0} 净销售¥${natCum.cumulativeNetSales?.toLocaleString() || 0}`;
+}
+
 interface ChatMsg { role: string; content: string; }
 
 function ReportPanel({ storeId, reportType, label }: { storeId: string; reportType: string; label: string }) {
@@ -258,18 +278,35 @@ function ChatPanel({ storeId }: { storeId: string }) {
     setInput("");
     setMessages(prev => [...prev, { role: "user", content: q }]);
     setLoading(true);
+    const apiKey = getApiKey();
     try {
-      const r = await fetch("/api/ai/chat", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ storeId: storeId === "all" ? null : storeId, question: q }),
-      });
-      if (!r.ok) throw new Error();
-      const data = await r.json();
-      setMessages(prev => [...prev, { role: "assistant", content: data.answer }]);
-    } catch {
-      toast.error("请求失败");
-      setMessages(prev => [...prev, { role: "assistant", content: "抱歉，回答失败，请稍后重试。" }]);
+      if (apiKey) {
+        // 快速模式：前端直调 GLM API
+        // 获取经营数据上下文
+        const sid = storeId === "all" ? "" : `&storeId=${storeId}`;
+        const dashRes = await fetch(`/api/dashboard?days=30${sid}`);
+        const dashData = await dashRes.json();
+        const context = buildDataContext(dashData);
+        const systemPrompt = `你是电商经营驾驶舱的 AI 老板助手。基于以下经营数据回答问题，用大白话，给可执行建议。\n\n${context}`;
+        const answer = await callGLMApi([
+          { role: "system", content: systemPrompt },
+          { role: "user", content: q },
+        ], apiKey);
+        setMessages(prev => [...prev, { role: "assistant", content: answer }]);
+      } else {
+        // 兼容模式：服务端 z-ai CLI
+        const r = await fetch("/api/ai/chat", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ storeId: storeId === "all" ? null : storeId, question: q }),
+        });
+        if (!r.ok) throw new Error();
+        const data = await r.json();
+        setMessages(prev => [...prev, { role: "assistant", content: data.answer }]);
+      }
+    } catch (e: any) {
+      toast.error("请求失败", { description: e.message?.slice(0, 80) });
+      setMessages(prev => [...prev, { role: "assistant", content: `抱歉，回答失败：${e.message || "请稍后重试"}` }]);
     } finally {
       setLoading(false);
     }
