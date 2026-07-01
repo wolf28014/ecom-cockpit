@@ -72,3 +72,4 @@ prisma/schema.prisma.bak
 *.bak
 prisma/schema.prisma.postgres.bak
 download/
+upload/
