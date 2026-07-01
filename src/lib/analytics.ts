@@ -1,5 +1,8 @@
 /**
- * 经营分析服务 - 所有统计/聚合逻辑
+ * 经营分析服务 V2
+ * - 新增访客数、净销售额、投产比、累积指标
+ * - 支持自然年（1/1 - 12/31）和季节年（7/1 - 次年 6/30）
+ * - 月度成本按月查询
  */
 import { db } from "@/lib/db";
 import { Prisma } from "@prisma/client";
@@ -7,33 +10,46 @@ import { Prisma } from "@prisma/client";
 // ============== 类型定义 ==============
 export interface PeriodSummary {
   period: string;
+  yearType?: "natural" | "seasonal"; // 自然年 | 季节年
   salesAmount: number;
   orderCount: number;
   refundAmount: number;
-  refundOrderCount: number;
+  visitors: number;
   refundRate: number;
   promotionTotal: number;
-  costTotal: number;
-  grossProfit: number;
-  netProfit: number;
-  profitRate: number;
-  roi: number;
-  avgOrderValue: number;
-  profitPerOrder: number;
   promotionRate: number;
+  netSales: number;        // 净销售额 = 销售 - 退款
+  roi: number;             // 投产比 = 销售 / 推广
+  avgOrderValue: number;
+  conversionRate: number;  // 转化率 = 订单 / 访客
   days: number;
+}
+
+export interface CumulativeStats {
+  // 累积指标（年度累计）
+  cumulativeSales: number;       // 累积销售额
+  cumulativeRefund: number;      // 累积退款
+  cumulativeNetSales: number;    // 累积净销售额
+  cumulativePromotion: number;   // 累积推广费
+  cumulativeRefundRate: number;  // 累积退款率
+  cumulativePromotionRate: number; // 累积推广占比（推广/销售）
+  cumulativeNetPromotionRate: number; // 累积净推广费率（推广/净销售）
+  yoyGrowth: number;             // 同比去年（销售额）
+  yoyProfitGrowth: number;       // 同比去年（净销售）
 }
 
 export interface TrendPoint {
   date: string;
   sales: number;
-  profit: number;
-  orders: number;
-  promotion: number;
-  cost: number;
   refund: number;
+  netSales: number;
+  orders: number;
+  visitors: number;
+  promotion: number;
   roi: number;
-  profitRate: number;
+  refundRate: number;
+  promotionRate: number;
+  conversionRate: number;
 }
 
 export interface SkuStat {
@@ -57,16 +73,63 @@ export interface StoreComparison {
   storeName: string;
   platform: string;
   sales: number;
-  profit: number;
+  refund: number;
+  netSales: number;
   orders: number;
-  profitRate: number;
+  visitors: number;
+  promotion: number;
   roi: number;
   refundRate: number;
+  conversionRate: number;
+}
+
+export interface MonthlyCostData {
+  id?: string;
+  storeId: string;
+  year: number;
+  month: number;
+  goodsCost: number;
+  redPacket: number;
+  labor: number;
+  other: number;
+  consumerExperience: number;
+  bnplTechFee: number;
+  basicSoftwareFee: number;
+  redPacketAdvance: number;
+  logistics: number;
+  brandGiftFee: number;
+  charity: number;
+  quickPaymentFee: number;
+  marketingPlatform: number;
+  totalCost: number;
+  note?: string | null;
+}
+
+// ============== 季节年工具 ==============
+export function getSeasonalYearRange(date: Date): { start: Date; end: Date; year: number } {
+  const y = date.getFullYear();
+  const m = date.getMonth() + 1;
+  // 季节年：7/1 开始，次年 6/30 结束
+  // 如果当前月份 >= 7，则属于本年开始的季节年
+  // 否则属于去年开始的季节年
+  const seasonYear = m >= 7 ? y : y - 1;
+  const start = new Date(seasonYear, 6, 1); // 7月1日（month 是 0-based）
+  const end = new Date(seasonYear + 1, 5, 30); // 次年6月30日
+  end.setHours(23, 59, 59, 999);
+  return { start, end, year: seasonYear };
+}
+
+export function getNaturalYearRange(date: Date): { start: Date; end: Date; year: number } {
+  const y = date.getFullYear();
+  const start = new Date(y, 0, 1);
+  const end = new Date(y, 11, 31);
+  end.setHours(23, 59, 59, 999);
+  return { start, end, year: y };
 }
 
 // ============== 主服务 ==============
 export class AnalyticsService {
-  // ---------- 周期汇总 ----------
+  // ---------- 今日/本周/本月 ----------
   static async getTodaySummary(storeId?: string): Promise<PeriodSummary> {
     const today = new Date();
     today.setHours(0, 0, 0, 0);
@@ -88,11 +151,20 @@ export class AnalyticsService {
     return this.getPeriodSummary(firstDay, today, "month", storeId);
   }
 
-  static async getYearSummary(storeId?: string): Promise<PeriodSummary> {
+  // 自然年
+  static async getNaturalYearSummary(storeId?: string): Promise<PeriodSummary> {
     const today = new Date();
-    today.setHours(0, 0, 0, 0);
-    const firstDay = new Date(today.getFullYear(), 0, 1);
-    return this.getPeriodSummary(firstDay, today, "year", storeId);
+    const { start, end, year } = getNaturalYearRange(today);
+    const s = await this.getPeriodSummary(start, end, "year", storeId);
+    return { ...s, yearType: "natural" };
+  }
+
+  // 季节年
+  static async getSeasonalYearSummary(storeId?: string): Promise<PeriodSummary> {
+    const today = new Date();
+    const { start, end, year } = getSeasonalYearRange(today);
+    const s = await this.getPeriodSummary(start, end, "year", storeId);
+    return { ...s, yearType: "seasonal" };
   }
 
   static async getCustomSummary(start: Date, end: Date, storeId?: string): Promise<PeriodSummary> {
@@ -109,10 +181,9 @@ export class AnalyticsService {
 
     if (records.length === 0) {
       return {
-        period, salesAmount: 0, orderCount: 0, refundAmount: 0, refundOrderCount: 0,
-        refundRate: 0, promotionTotal: 0, costTotal: 0, grossProfit: 0, netProfit: 0,
-        profitRate: 0, roi: 0, avgOrderValue: 0, profitPerOrder: 0, promotionRate: 0,
-        days: 0,
+        period, salesAmount: 0, orderCount: 0, refundAmount: 0, visitors: 0,
+        refundRate: 0, promotionTotal: 0, promotionRate: 0, netSales: 0,
+        roi: 0, avgOrderValue: 0, conversionRate: 0, days: 0,
       };
     }
 
@@ -120,35 +191,68 @@ export class AnalyticsService {
       salesAmount: acc.salesAmount + r.salesAmount,
       orderCount: acc.orderCount + r.orderCount,
       refundAmount: acc.refundAmount + r.refundAmount,
-      refundOrderCount: acc.refundOrderCount + r.refundOrderCount,
-      promotionTotal: acc.promotionTotal + r.promotionTotal,
-      costTotal: acc.costTotal + r.costTotal,
-      grossProfit: acc.grossProfit + r.grossProfit,
-      netProfit: acc.netProfit + r.netProfit,
-    }), { salesAmount: 0, orderCount: 0, refundAmount: 0, refundOrderCount: 0, promotionTotal: 0, costTotal: 0, grossProfit: 0, netProfit: 0 });
+      visitors: acc.visitors + r.visitors,
+      promotionTotal: acc.promotionTotal + (r.promotionManualTotal ?? r.promotionTotal),
+    }), { salesAmount: 0, orderCount: 0, refundAmount: 0, visitors: 0, promotionTotal: 0 });
 
     const sales = sum.salesAmount;
-    const orders = sum.orderCount;
+    const refund = sum.refundAmount;
     const promo = sum.promotionTotal;
-    const net = sum.netProfit;
+    const orders = sum.orderCount;
+    const visitors = sum.visitors;
+    const netSales = sales - refund;
 
     return {
       period,
       salesAmount: Math.round(sales * 100) / 100,
       orderCount: orders,
-      refundAmount: Math.round(sum.refundAmount * 100) / 100,
-      refundOrderCount: sum.refundOrderCount,
-      refundRate: orders > 0 ? Math.round(sum.refundOrderCount / orders * 10000) / 10000 : 0,
+      refundAmount: Math.round(refund * 100) / 100,
+      visitors,
+      refundRate: sales > 0 ? Math.round(refund / sales * 10000) / 10000 : 0,
       promotionTotal: Math.round(promo * 100) / 100,
-      costTotal: Math.round(sum.costTotal * 100) / 100,
-      grossProfit: Math.round(sum.grossProfit * 100) / 100,
-      netProfit: Math.round(net * 100) / 100,
-      profitRate: sales > 0 ? Math.round(net / sales * 10000) / 10000 : 0,
+      promotionRate: sales > 0 ? Math.round(promo / sales * 10000) / 10000 : 0,
+      netSales: Math.round(netSales * 100) / 100,
       roi: promo > 0 ? Math.round(sales / promo * 100) / 100 : 0,
       avgOrderValue: orders > 0 ? Math.round(sales / orders * 100) / 100 : 0,
-      profitPerOrder: orders > 0 ? Math.round(net / orders * 100) / 100 : 0,
-      promotionRate: sales > 0 ? Math.round(promo / sales * 10000) / 10000 : 0,
+      conversionRate: visitors > 0 ? Math.round(orders / visitors * 10000) / 10000 : 0,
       days: records.length,
+    };
+  }
+
+  // ---------- 累积指标（年度） ----------
+  static async getCumulativeStats(storeId?: string, yearType: "natural" | "seasonal" = "natural"): Promise<CumulativeStats> {
+    const today = new Date();
+    today.setHours(23, 59, 59, 999);
+
+    const currentRange = yearType === "seasonal" ? getSeasonalYearRange(today) : getNaturalYearRange(today);
+
+    // 今年累计
+    const thisYearSummary = await this.getPeriodSummary(currentRange.start, today, "cumulative", storeId);
+
+    // 去年同期
+    const daysPassed = Math.floor((today.getTime() - currentRange.start.getTime()) / (24 * 60 * 60 * 1000));
+    const lastStart = new Date(currentRange.start);
+    lastStart.setFullYear(lastStart.getFullYear() - 1);
+    const lastEnd = new Date(lastStart);
+    lastEnd.setDate(lastEnd.getDate() + daysPassed);
+    const lastYearSummary = await this.getPeriodSummary(lastStart, lastEnd, "last_year", storeId);
+
+    const yoyGrowth = lastYearSummary.salesAmount > 0
+      ? (thisYearSummary.salesAmount - lastYearSummary.salesAmount) / lastYearSummary.salesAmount : 0;
+    const yoyProfitGrowth = lastYearSummary.netSales > 0
+      ? (thisYearSummary.netSales - lastYearSummary.netSales) / lastYearSummary.netSales : 0;
+
+    return {
+      cumulativeSales: thisYearSummary.salesAmount,
+      cumulativeRefund: thisYearSummary.refundAmount,
+      cumulativeNetSales: thisYearSummary.netSales,
+      cumulativePromotion: thisYearSummary.promotionTotal,
+      cumulativeRefundRate: thisYearSummary.refundRate,
+      cumulativePromotionRate: thisYearSummary.promotionRate,
+      cumulativeNetPromotionRate: thisYearSummary.netSales > 0
+        ? Math.round(thisYearSummary.promotionTotal / thisYearSummary.netSales * 10000) / 10000 : 0,
+      yoyGrowth,
+      yoyProfitGrowth,
     };
   }
 
@@ -169,35 +273,42 @@ export class AnalyticsService {
       orderBy: { recordDate: "asc" },
     });
 
-    // 按日期聚合
     const map = new Map<string, TrendPoint>();
     for (const r of records) {
       const key = r.recordDate.toISOString().slice(0, 10);
       if (!map.has(key)) {
         map.set(key, {
-          date: key, sales: 0, profit: 0, orders: 0,
-          promotion: 0, cost: 0, refund: 0, roi: 0, profitRate: 0,
+          date: key, sales: 0, refund: 0, netSales: 0, orders: 0,
+          visitors: 0, promotion: 0, roi: 0, refundRate: 0,
+          promotionRate: 0, conversionRate: 0,
         });
       }
       const p = map.get(key)!;
       p.sales += r.salesAmount;
-      p.profit += r.netProfit;
-      p.orders += r.orderCount;
-      p.promotion += r.promotionTotal;
-      p.cost += r.costTotal;
       p.refund += r.refundAmount;
+      p.orders += r.orderCount;
+      p.visitors += r.visitors;
+      p.promotion += (r.promotionManualTotal ?? r.promotionTotal);
     }
 
-    return Array.from(map.values()).map(p => ({
-      ...p,
-      sales: Math.round(p.sales * 100) / 100,
-      profit: Math.round(p.profit * 100) / 100,
-      promotion: Math.round(p.promotion * 100) / 100,
-      cost: Math.round(p.cost * 100) / 100,
-      refund: Math.round(p.refund * 100) / 100,
-      roi: p.promotion > 0 ? Math.round(p.sales / p.promotion * 100) / 100 : 0,
-      profitRate: p.sales > 0 ? Math.round(p.profit / p.sales * 10000) / 10000 : 0,
-    }));
+    return Array.from(map.values()).map(p => {
+      const promotion = p.promotion;
+      const sales = p.sales;
+      const refund = p.refund;
+      const orders = p.orders;
+      const visitors = p.visitors;
+      return {
+        ...p,
+        sales: Math.round(sales * 100) / 100,
+        refund: Math.round(refund * 100) / 100,
+        netSales: Math.round((sales - refund) * 100) / 100,
+        promotion: Math.round(promotion * 100) / 100,
+        roi: promotion > 0 ? Math.round(sales / promotion * 100) / 100 : 0,
+        refundRate: sales > 0 ? Math.round(refund / sales * 10000) / 10000 : 0,
+        promotionRate: sales > 0 ? Math.round(promotion / sales * 10000) / 10000 : 0,
+        conversionRate: visitors > 0 ? Math.round(orders / visitors * 10000) / 10000 : 0,
+      };
+    });
   }
 
   // ---------- SKU 统计 ----------
@@ -221,13 +332,10 @@ export class AnalyticsService {
     for (const ds of dailySkus) {
       if (!map.has(ds.skuId)) {
         map.set(ds.skuId, {
-          skuId: ds.skuId,
-          skuCode: ds.sku.skuCode,
-          skuName: ds.sku.skuName,
+          skuId: ds.skuId, skuCode: ds.sku.skuCode, skuName: ds.sku.skuName,
           category: ds.sku.category || "",
           salesAmount: 0, quantity: 0, orderCount: 0, cost: 0,
-          grossProfit: 0, refundAmount: 0, refundRate: 0, roi: 0,
-          stock: ds.sku.stock,
+          grossProfit: 0, refundAmount: 0, refundRate: 0, roi: 0, stock: ds.sku.stock,
         });
       }
       const s = map.get(ds.skuId)!;
@@ -269,21 +377,21 @@ export class AnalyticsService {
       if (records.length === 0) continue;
 
       const sales = records.reduce((a, r) => a + r.salesAmount, 0);
-      const profit = records.reduce((a, r) => a + r.netProfit, 0);
+      const refund = records.reduce((a, r) => a + r.refundAmount, 0);
       const orders = records.reduce((a, r) => a + r.orderCount, 0);
-      const promo = records.reduce((a, r) => a + r.promotionTotal, 0);
-      const refundOrders = records.reduce((a, r) => a + r.refundOrderCount, 0);
+      const visitors = records.reduce((a, r) => a + r.visitors, 0);
+      const promo = records.reduce((a, r) => a + (r.promotionManualTotal ?? r.promotionTotal), 0);
 
       results.push({
-        storeId: store.id,
-        storeName: store.name,
-        platform: store.platform,
+        storeId: store.id, storeName: store.name, platform: store.platform,
         sales: Math.round(sales * 100) / 100,
-        profit: Math.round(profit * 100) / 100,
-        orders,
-        profitRate: sales > 0 ? Math.round(profit / sales * 10000) / 10000 : 0,
+        refund: Math.round(refund * 100) / 100,
+        netSales: Math.round((sales - refund) * 100) / 100,
+        orders, visitors,
+        promotion: Math.round(promo * 100) / 100,
         roi: promo > 0 ? Math.round(sales / promo * 100) / 100 : 0,
-        refundRate: orders > 0 ? Math.round(refundOrders / orders * 10000) / 10000 : 0,
+        refundRate: sales > 0 ? Math.round(refund / sales * 10000) / 10000 : 0,
+        conversionRate: visitors > 0 ? Math.round(orders / visitors * 10000) / 10000 : 0,
       });
     }
     return results;
@@ -304,12 +412,12 @@ export class AnalyticsService {
         : { targetType: "yearly", targetYear: year },
     });
     if (yearlyTarget) {
-      const yearSummary = await this.getYearSummary(storeId);
+      const yearSummary = await this.getNaturalYearSummary(storeId);
       result.yearly = {
         target: yearlyTarget.targetAmount,
-        actual: yearSummary.netProfit,
-        rate: yearlyTarget.targetAmount > 0 ? Math.round(yearSummary.netProfit / yearlyTarget.targetAmount * 10000) / 10000 : 0,
-        remaining: Math.round((yearlyTarget.targetAmount - yearSummary.netProfit) * 100) / 100,
+        actual: yearSummary.netSales,
+        rate: yearlyTarget.targetAmount > 0 ? Math.round(yearSummary.netSales / yearlyTarget.targetAmount * 10000) / 10000 : 0,
+        remaining: Math.round((yearlyTarget.targetAmount - yearSummary.netSales) * 100) / 100,
       };
     }
 
@@ -324,9 +432,9 @@ export class AnalyticsService {
       const quarterSummary = await this.getCustomSummary(quarterStart, today, storeId);
       result.quarterly = {
         target: quarterlyTarget.targetAmount,
-        actual: quarterSummary.netProfit,
-        rate: quarterlyTarget.targetAmount > 0 ? Math.round(quarterSummary.netProfit / quarterlyTarget.targetAmount * 10000) / 10000 : 0,
-        remaining: Math.round((quarterlyTarget.targetAmount - quarterSummary.netProfit) * 100) / 100,
+        actual: quarterSummary.netSales,
+        rate: quarterlyTarget.targetAmount > 0 ? Math.round(quarterSummary.netSales / quarterlyTarget.targetAmount * 10000) / 10000 : 0,
+        remaining: Math.round((quarterlyTarget.targetAmount - quarterSummary.netSales) * 100) / 100,
       };
     }
 
@@ -342,9 +450,9 @@ export class AnalyticsService {
       const daysLeft = Math.ceil((nextMonth.getTime() - today.getTime()) / (24 * 60 * 60 * 1000));
       result.monthly = {
         target: monthlyTarget.targetAmount,
-        actual: monthSummary.netProfit,
-        rate: monthlyTarget.targetAmount > 0 ? Math.round(monthSummary.netProfit / monthlyTarget.targetAmount * 10000) / 10000 : 0,
-        remaining: Math.round((monthlyTarget.targetAmount - monthSummary.netProfit) * 100) / 100,
+        actual: monthSummary.netSales,
+        rate: monthlyTarget.targetAmount > 0 ? Math.round(monthSummary.netSales / monthlyTarget.targetAmount * 10000) / 10000 : 0,
+        remaining: Math.round((monthlyTarget.targetAmount - monthSummary.netSales) * 100) / 100,
         daysLeft,
       };
     }
@@ -373,39 +481,56 @@ export class AnalyticsService {
         }
       } catch {}
     }
-    // 排序
     const sorted = Object.entries(breakdown)
       .sort((a, b) => b[1] - a[1])
       .reduce((acc, [k, v]) => { acc[k] = Math.round(v * 100) / 100; return acc; }, {} as Record<string, number>);
     return sorted;
   }
 
-  // ---------- 成本结构 ----------
-  static async getCostBreakdown(days: number, storeId?: string): Promise<Record<string, number>> {
-    const end = new Date();
-    end.setHours(0, 0, 0, 0);
-    const start = new Date(end);
-    start.setDate(start.getDate() - (days - 1));
+  // ---------- 月度成本 ----------
+  static async getMonthlyCost(storeId: string, year: number, month: number): Promise<MonthlyCostData | null> {
+    const cost = await db.monthlyCost.findUnique({
+      where: { storeId_year_month: { storeId, year, month } },
+    });
+    if (!cost) return null;
+    return cost as MonthlyCostData;
+  }
 
-    const where: Prisma.DailyRecordWhereInput = {
-      recordDate: { gte: start, lte: end },
-    };
+  static async getMonthlyCosts(storeId?: string, year?: number): Promise<MonthlyCostData[]> {
+    const where: any = {};
     if (storeId) where.storeId = storeId;
+    if (year) where.year = year;
+    const costs = await db.monthlyCost.findMany({
+      where,
+      orderBy: [{ year: "desc" }, { month: "desc" }],
+    });
+    return costs as MonthlyCostData[];
+  }
 
-    const records = await db.dailyRecord.findMany({ where, select: { costData: true } });
-    const breakdown: Record<string, number> = {};
-    for (const r of records) {
-      try {
-        const data = JSON.parse(r.costData || "{}");
-        for (const [k, v] of Object.entries(data)) {
-          breakdown[k] = (breakdown[k] || 0) + (v as number);
-        }
-      } catch {}
+  static async saveMonthlyCost(data: MonthlyCostData): Promise<MonthlyCostData> {
+    const totalCost = Math.round((
+      data.goodsCost + data.redPacket + data.labor + data.other +
+      data.consumerExperience + data.bnplTechFee + data.basicSoftwareFee +
+      data.redPacketAdvance + data.logistics + data.brandGiftFee +
+      data.charity + data.quickPaymentFee + data.marketingPlatform
+    ) * 100) / 100;
+
+    const existing = await db.monthlyCost.findUnique({
+      where: { storeId_year_month: { storeId: data.storeId, year: data.year, month: data.month } },
+    });
+
+    if (existing) {
+      const updated = await db.monthlyCost.update({
+        where: { id: existing.id },
+        data: { ...data, totalCost },
+      });
+      return updated as MonthlyCostData;
+    } else {
+      const created = await db.monthlyCost.create({
+        data: { ...data, totalCost },
+      });
+      return created as MonthlyCostData;
     }
-    const sorted = Object.entries(breakdown)
-      .sort((a, b) => b[1] - a[1])
-      .reduce((acc, [k, v]) => { acc[k] = Math.round(v * 100) / 100; return acc; }, {} as Record<string, number>);
-    return sorted;
   }
 
   // ---------- 数据上下文（供 AI 使用） ----------
@@ -416,12 +541,13 @@ export class AnalyticsService {
     today.setHours(0, 0, 0, 0);
     yesterday.setHours(0, 0, 0, 0);
 
-    const [todaySum, yesterdaySum, weekSum, monthSum, yearSum, progress] = await Promise.all([
+    const [todaySum, yesterdaySum, weekSum, monthSum, naturalYearSum, seasonalYearSum, progress] = await Promise.all([
       this.getTodaySummary(storeId),
       this.getCustomSummary(yesterday, yesterday, storeId),
       this.getWeekSummary(storeId),
       this.getMonthSummary(storeId),
-      this.getYearSummary(storeId),
+      this.getNaturalYearSummary(storeId),
+      this.getSeasonalYearSummary(storeId),
       this.getProfitTargetProgress(storeId),
     ]);
 
@@ -434,8 +560,8 @@ export class AnalyticsService {
     const salesChangePct = yesterdaySum.salesAmount > 0
       ? ((todaySum.salesAmount - yesterdaySum.salesAmount) / yesterdaySum.salesAmount * 100).toFixed(1)
       : "0";
-    const profitChangePct = yesterdaySum.netProfit !== 0
-      ? ((todaySum.netProfit - yesterdaySum.netProfit) / Math.abs(yesterdaySum.netProfit) * 100).toFixed(1)
+    const netSalesChangePct = yesterdaySum.netSales !== 0
+      ? ((todaySum.netSales - yesterdaySum.netSales) / Math.abs(yesterdaySum.netSales) * 100).toFixed(1)
       : "0";
 
     let progressStr = "暂未设置利润目标";
@@ -449,13 +575,42 @@ export class AnalyticsService {
     }
 
     return `当前店铺：${storeName}
-今日（${today.toISOString().slice(0, 10)}）：销售额¥${todaySum.salesAmount.toLocaleString()}、净利润¥${todaySum.netProfit.toLocaleString()}、订单${todaySum.orderCount}单、利润率${(todaySum.profitRate * 100).toFixed(1)}%、ROI ${todaySum.roi.toFixed(2)}、推广费率${(todaySum.promotionRate * 100).toFixed(1)}%、退款率${(todaySum.refundRate * 100).toFixed(1)}%
-昨日（${yesterday.toISOString().slice(0, 10)}）：销售额¥${yesterdaySum.salesAmount.toLocaleString()}、净利润¥${yesterdaySum.netProfit.toLocaleString()}、订单${yesterdaySum.orderCount}单
-环比变化：销售额 ${salesChangePct > 0 ? "+" : ""}${salesChangePct}%、净利润 ${profitChangePct > 0 ? "+" : ""}${profitChangePct}%
-本周：销售额¥${weekSum.salesAmount.toLocaleString()}、净利润¥${weekSum.netProfit.toLocaleString()}
-本月：销售额¥${monthSum.salesAmount.toLocaleString()}、净利润¥${monthSum.netProfit.toLocaleString()}、利润率${(monthSum.profitRate * 100).toFixed(1)}%
-本年：销售额¥${yearSum.salesAmount.toLocaleString()}、净利润¥${yearSum.netProfit.toLocaleString()}
+今日（${today.toISOString().slice(0, 10)}）：销售额¥${todaySum.salesAmount.toLocaleString()}、退款¥${todaySum.refundAmount.toLocaleString()}、净销售额¥${todaySum.netSales.toLocaleString()}、订单${todaySum.orderCount}单、访客${todaySum.visitors}人、退款率${(todaySum.refundRate * 100).toFixed(1)}%、推广费¥${todaySum.promotionTotal.toLocaleString()}、推广占比${(todaySum.promotionRate * 100).toFixed(1)}%、投产比${todaySum.roi.toFixed(2)}、转化率${(todaySum.conversionRate * 100).toFixed(2)}%
+昨日（${yesterday.toISOString().slice(0, 10)}）：销售额¥${yesterdaySum.salesAmount.toLocaleString()}、净销售额¥${yesterdaySum.netSales.toLocaleString()}、订单${yesterdaySum.orderCount}单
+环比变化：销售额 ${salesChangePct > 0 ? "+" : ""}${salesChangePct}%、净销售额 ${netSalesChangePct > 0 ? "+" : ""}${netSalesChangePct}%
+本周：销售额¥${weekSum.salesAmount.toLocaleString()}、净销售额¥${weekSum.netSales.toLocaleString()}、投产比${weekSum.roi.toFixed(2)}
+本月：销售额¥${monthSum.salesAmount.toLocaleString()}、净销售额¥${monthSum.netSales.toLocaleString()}、推广占比${(monthSum.promotionRate * 100).toFixed(1)}%
+自然年（${today.getFullYear()}年）：销售额¥${naturalYearSum.salesAmount.toLocaleString()}、净销售额¥${naturalYearSum.netSales.toLocaleString()}、推广费¥${naturalYearSum.promotionTotal.toLocaleString()}
+季节年（${getSeasonalYearRange(today).year}-${getSeasonalYearRange(today).year + 1}）：销售额¥${seasonalYearSum.salesAmount.toLocaleString()}、净销售额¥${seasonalYearSum.netSales.toLocaleString()}
 利润目标进度：
 ${progressStr}`;
   }
 }
+
+// 导出推广字段常量
+export const PROMOTION_FIELDS = [
+  "货品全站推广",
+  "关键词推广",
+  "人群推广",
+  "店铺直达",
+  "内容营销",
+  "淘宝客",
+  "其它",
+];
+
+// 月度成本字段定义
+export const MONTHLY_COST_FIELDS = [
+  { key: "goodsCost", label: "货品成本" },
+  { key: "redPacket", label: "红包" },
+  { key: "labor", label: "人工" },
+  { key: "other", label: "其它" },
+  { key: "consumerExperience", label: "消费者体验提升计划服务费" },
+  { key: "bnplTechFee", label: "先用后付技术服务费" },
+  { key: "basicSoftwareFee", label: "基础软件服务费" },
+  { key: "redPacketAdvance", label: "限时红包代商家垫付扣回" },
+  { key: "logistics", label: "商家集运物流服务费" },
+  { key: "brandGiftFee", label: "品牌新享淘宝礼金软件服务费" },
+  { key: "charity", label: "公益宝贝" },
+  { key: "quickPaymentFee", label: "淘宝极速回款手动回款服务费" },
+  { key: "marketingPlatform", label: "营销平台" },
+] as const;

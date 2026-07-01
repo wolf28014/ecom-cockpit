@@ -2,172 +2,344 @@
 
 import { useState, useEffect } from "react";
 import { KpiRow, SectionCard } from "@/components/ecom/kpi";
-import { StoreSelector } from "@/components/ecom/store-selector";
-import { Button } from "@/components/ui/button";
+import { StoreSelector, RefreshButton, useStores } from "@/components/ecom/store-selector";
+import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
+import { Card, CardContent } from "@/components/ui/card";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
-import { Card, CardContent } from "@/components/ui/card";
-import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover";
-import { Calendar } from "@/components/ui/calendar";
-import { CalendarIcon, Save, Download, RotateCcw } from "lucide-react";
-import { format } from "date-fns";
-import { zhCN } from "date-fns/locale";
+import { Button } from "@/components/ui/button";
+import { Textarea } from "@/components/ui/textarea";
 import { toast } from "sonner";
 
-const PLATFORM_PROMO: Record<string, string[]> = {
-  taobao: ["直通车", "万相台", "引力魔方", "淘宝客", "其他"],
-  tmall: ["直通车", "万相台", "引力魔方", "淘宝客", "品牌专区", "其他"],
-  douyin: ["千川投放", "小店随心推", "达人推广", "直播投放", "其他"],
-  pinduoduo: ["多多搜索", "多多场景", "多多进宝", "明星店铺", "其他"],
-};
+const PROMOTION_FIELDS = [
+  "货品全站推广",
+  "关键词推广",
+  "人群推广",
+  "店铺直达",
+  "内容营销",
+  "淘宝客",
+  "其它",
+];
 
-const COST_FIELDS = ["商品成本", "运费", "包装", "人工", "房租", "其他"];
-
-interface StoreInfo { id: string; platform: string; }
+const MONTHLY_COST_FIELDS = [
+  { key: "goodsCost", label: "货品成本" },
+  { key: "redPacket", label: "红包" },
+  { key: "labor", label: "人工" },
+  { key: "other", label: "其它" },
+  { key: "consumerExperience", label: "消费者体验提升计划服务费" },
+  { key: "bnplTechFee", label: "先用后付技术服务费" },
+  { key: "basicSoftwareFee", label: "基础软件服务费" },
+  { key: "redPacketAdvance", label: "限时红包代商家垫付扣回" },
+  { key: "logistics", label: "商家集运物流服务费" },
+  { key: "brandGiftFee", label: "品牌新享淘宝礼金软件服务费" },
+  { key: "charity", label: "公益宝贝" },
+  { key: "quickPaymentFee", label: "淘宝极速回款手动回款服务费" },
+  { key: "marketingPlatform", label: "营销平台" },
+] as const;
 
 export function DataEntryPage() {
-  const [storeId, setStoreId] = useState("all");
-  const [date, setDate] = useState<Date>(new Date());
-  const [calOpen, setCalOpen] = useState(false);
-  const [storeInfo, setStoreInfo] = useState<StoreInfo | null>(null);
-  const [loading, setLoading] = useState(false);
+  return (
+    <div className="space-y-6">
+      <div>
+        <h1 className="text-2xl font-bold tracking-tight">数据录入</h1>
+        <p className="text-sm text-muted-foreground mt-1">每日数据 + 月度成本</p>
+      </div>
+      <Tabs defaultValue="daily">
+        <TabsList>
+          <TabsTrigger value="daily">每日数据录入</TabsTrigger>
+          <TabsTrigger value="monthly">月度成本录入</TabsTrigger>
+        </TabsList>
+        <TabsContent value="daily"><DailyTab /></TabsContent>
+        <TabsContent value="monthly"><MonthlyTab /></TabsContent>
+      </Tabs>
+    </div>
+  );
+}
+
+// =================== 每日数据录入 ===================
+function DailyTab() {
+  const { stores, loading } = useStores();
+  const [storeId, setStoreId] = useState<string>("");
+  const [date, setDate] = useState(new Date().toISOString().slice(0, 10));
+
+  // 基础数据
+  const [sales, setSales] = useState(0);
+  const [orders, setOrders] = useState(0);
+  const [refund, setRefund] = useState(0);
+  const [visitors, setVisitors] = useState(0);
+
+  // 推广数据
+  const [promo, setPromo] = useState<Record<string, number>>({});
+  const [promoManualTotal, setPromoManualTotal] = useState<string>(""); // 手填合计
+
   const [saving, setSaving] = useState(false);
+  const [loadingData, setLoadingData] = useState(false);
 
-  const [base, setBase] = useState({ salesAmount: "0", orderCount: "0", refundAmount: "0", refundOrderCount: "0" });
-  const [promo, setPromo] = useState<Record<string, string>>({});
-  const [cost, setCost] = useState<Record<string, string>>({});
-
-  // fetch store info to get platform
   useEffect(() => {
-    if (storeId === "all") { setStoreInfo(null); return; }
-    fetch("/api/stores")
-      .then(r => r.json())
-      .then((data: StoreInfo[]) => {
-        const s = data.find(x => x.id === storeId);
-        setStoreInfo(s || null);
-      })
-      .catch(() => setStoreInfo(null));
-  }, [storeId]);
+    if (!storeId && stores.length > 0) setStoreId(stores[0].id);
+  }, [stores, storeId]);
 
-  // initialize promo fields when platform changes
+  // 初始化推广字段
   useEffect(() => {
-    if (!storeInfo) return;
-    const fields = PLATFORM_PROMO[storeInfo.platform] || [];
-    setPromo(prev => {
-      const next: Record<string, string> = {};
-      for (const f of fields) next[f] = prev[f] || "0";
-      return next;
-    });
-  }, [storeInfo?.platform]);
-
-  // initialize cost fields
-  useEffect(() => {
-    setCost(prev => {
-      const next: Record<string, string> = {};
-      for (const f of COST_FIELDS) next[f] = prev[f] || "0";
-      return next;
-    });
+    const init: Record<string, number> = {};
+    PROMOTION_FIELDS.forEach(f => (init[f] = 0));
+    setPromo(init);
   }, []);
 
-  const loadExisting = async () => {
-    if (storeId === "all") { toast.error("请选择具体店铺"); return; }
-    setLoading(true);
-    try {
-      const dateStr = format(date, "yyyy-MM-dd");
-      const r = await fetch(`/api/data-entry?storeId=${storeId}&date=${dateStr}`);
-      const d = await r.json();
-      if (!d || !d.id) {
-        toast.info("该日暂无数据，已重置为默认值");
-        setBase({ salesAmount: "0", orderCount: "0", refundAmount: "0", refundOrderCount: "0" });
-        const fields = storeInfo ? (PLATFORM_PROMO[storeInfo.platform] || []) : [];
-        const newPromo: Record<string, string> = {};
-        for (const f of fields) newPromo[f] = "0";
-        setPromo(newPromo);
-        const newCost: Record<string, string> = {};
-        for (const f of COST_FIELDS) newCost[f] = "0";
-        setCost(newCost);
-        return;
-      }
-      setBase({
-        salesAmount: String(d.salesAmount || 0),
-        orderCount: String(d.orderCount || 0),
-        refundAmount: String(d.refundAmount || 0),
-        refundOrderCount: String(d.refundOrderCount || 0),
-      });
-      try {
-        const promoObj = JSON.parse(d.promotionData || "{}");
-        const fields = storeInfo ? (PLATFORM_PROMO[storeInfo.platform] || []) : [];
-        const newPromo: Record<string, string> = {};
-        for (const f of fields) newPromo[f] = String(promoObj[f] || 0);
-        setPromo(newPromo);
-      } catch { /* empty */ }
-      try {
-        const costObj = JSON.parse(d.costData || "{}");
-        const newCost: Record<string, string> = {};
-        for (const f of COST_FIELDS) newCost[f] = String(costObj[f] || 0);
-        setCost(newCost);
-      } catch { /* empty */ }
-      toast.success("已加载该日数据");
-    } catch {
-      toast.error("加载数据失败");
-    } finally {
-      setLoading(false);
-    }
-  };
-
-  // auto load on store/date change
+  // 切换店铺/日期时加载已有数据
   useEffect(() => {
-    if (storeId !== "all" && storeInfo) loadExisting();
-  }, [storeId, date, storeInfo?.platform]);
+    if (!storeId) return;
+    setLoadingData(true);
+    fetch(`/api/data-entry?storeId=${storeId}&date=${date}`)
+      .then(r => r.json())
+      .then(d => {
+        if (d) {
+          setSales(d.salesAmount || 0);
+          setOrders(d.orderCount || 0);
+          setRefund(d.refundAmount || 0);
+          setVisitors(d.visitors || 0);
+          const promoData = d.promotionData || {};
+          const init: Record<string, number> = {};
+          PROMOTION_FIELDS.forEach(f => (init[f] = promoData[f] || 0));
+          setPromo(init);
+          setPromoManualTotal(d.promotionManualTotal != null ? String(d.promotionManualTotal) : "");
+        } else {
+          setSales(0); setOrders(0); setRefund(0); setVisitors(0);
+          const init: Record<string, number> = {};
+          PROMOTION_FIELDS.forEach(f => (init[f] = 0));
+          setPromo(init);
+          setPromoManualTotal("");
+        }
+      })
+      .catch(() => {})
+      .finally(() => setLoadingData(false));
+  }, [storeId, date]);
 
-  const num = (s: string) => Number(s) || 0;
+  // 自动计算
+  const promoAutoTotal = Object.values(promo).reduce((a, b) => a + (Number(b) || 0), 0);
+  const promoEffectiveTotal = promoManualTotal !== "" && Number(promoManualTotal) > 0
+    ? Number(promoManualTotal) : promoAutoTotal;
 
-  const promoTotal = Object.values(promo).reduce((a, v) => a + num(v), 0);
-  const costTotal = Object.values(cost).reduce((a, v) => a + num(v), 0);
-  const goodsCost = num(cost["商品成本"] || "0");
-  const shipping = num(cost["运费"] || "0");
-  const packageCost = num(cost["包装"] || "0");
-  const labor = num(cost["人工"] || "0");
-  const rent = num(cost["房租"] || "0");
-  const other = num(cost["其他"] || "0");
-
-  const sales = num(base.salesAmount);
-  const orders = num(base.orderCount);
-  const refund = num(base.refundAmount);
-  const refundOrders = num(base.refundOrderCount);
-
-  const grossProfit = sales - goodsCost - refund;
-  const netProfit = grossProfit - promoTotal - shipping - packageCost - labor - rent - other;
-  const profitRate = sales > 0 ? netProfit / sales : 0;
-  const roi = promoTotal > 0 ? sales / promoTotal : 0;
+  const netSales = sales - refund;
+  const refundRate = sales > 0 ? refund / sales : 0;
+  const promotionRate = sales > 0 ? promoEffectiveTotal / sales : 0;
+  const roi = promoEffectiveTotal > 0 ? sales / promoEffectiveTotal : 0;
   const avgOrderValue = orders > 0 ? sales / orders : 0;
-  const profitPerOrder = orders > 0 ? netProfit / orders : 0;
-  const refundRate = orders > 0 ? refundOrders / orders : 0;
-  const promotionRate = sales > 0 ? promoTotal / sales : 0;
+  const conversionRate = visitors > 0 ? orders / visitors : 0;
 
-  const fmtMoney = (v: number) => `¥${(v || 0).toLocaleString(undefined, { maximumFractionDigits: 2 })}`;
-  const fmtPct = (v: number) => `${(v * 100).toFixed(1)}%`;
+  const fmt = (v: number) => `¥${v.toLocaleString(undefined, { maximumFractionDigits: 2 })}`;
+  const fmtPct = (v: number) => `${(v * 100).toFixed(2)}%`;
 
   const handleSave = async () => {
-    if (storeId === "all") { toast.error("请选择具体店铺"); return; }
+    if (!storeId) {
+      toast.error("请先选择店铺");
+      return;
+    }
     setSaving(true);
     try {
       const res = await fetch("/api/data-entry", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
-          storeId,
-          recordDate: format(date, "yyyy-MM-dd"),
-          salesAmount: sales,
-          orderCount: orders,
-          refundAmount: refund,
-          refundOrderCount: refundOrders,
+          storeId, recordDate: date,
+          salesAmount: sales, orderCount: orders, refundAmount: refund, visitors,
           promotionData: promo,
-          costData: cost,
+          promotionManualTotal: promoManualTotal !== "" ? Number(promoManualTotal) : null,
         }),
       });
-      if (!res.ok) throw new Error();
-      toast.success("数据已保存");
+      if (res.ok) {
+        toast.success("保存成功", {
+          description: `净销售额 ${fmt(netSales)} · 投产比 ${roi.toFixed(2)}`,
+        });
+      } else {
+        toast.error("保存失败");
+      }
+    } catch (e) {
+      toast.error("保存失败");
+    } finally {
+      setSaving(false);
+    }
+  };
+
+  return (
+    <div className="space-y-4">
+      {/* 顶部：店铺 + 日期 */}
+      <Card>
+        <CardContent className="p-4 flex flex-wrap items-end gap-4">
+          <div className="space-y-1.5">
+            <Label className="text-xs">选择店铺</Label>
+            <StoreSelector value={storeId || "all"} onChange={(v) => setStoreId(v === "all" ? "" : v)} allowAll={false} />
+          </div>
+          <div className="space-y-1.5">
+            <Label className="text-xs">录入日期</Label>
+            <Input type="date" value={date} onChange={(e) => setDate(e.target.value)} className="w-[180px]" />
+          </div>
+          <div className="ml-auto flex gap-2">
+            {loadingData && <span className="text-xs text-muted-foreground self-center">加载中...</span>}
+            <RefreshButton onClick={() => {}} loading={loadingData} />
+            <Button onClick={handleSave} disabled={saving}>
+              {saving ? "保存中..." : "保存数据"}
+            </Button>
+          </div>
+        </CardContent>
+      </Card>
+
+      <div className="grid grid-cols-1 lg:grid-cols-3 gap-4">
+        {/* 基础销售数据 */}
+        <SectionCard title="基础销售数据" subtitle="销售额 / 订单 / 退款 / 访客">
+          <div className="space-y-3">
+            <div>
+              <Label className="text-xs">销售额</Label>
+              <Input type="number" value={sales || ""} onChange={(e) => setSales(Number(e.target.value))} placeholder="0.00" />
+            </div>
+            <div>
+              <Label className="text-xs">订单数</Label>
+              <Input type="number" value={orders || ""} onChange={(e) => setOrders(Number(e.target.value))} placeholder="0" />
+            </div>
+            <div>
+              <Label className="text-xs">退款金额</Label>
+              <Input type="number" value={refund || ""} onChange={(e) => setRefund(Number(e.target.value))} placeholder="0.00" />
+            </div>
+            <div>
+              <Label className="text-xs">访客数</Label>
+              <Input type="number" value={visitors || ""} onChange={(e) => setVisitors(Number(e.target.value))} placeholder="0" />
+            </div>
+          </div>
+        </SectionCard>
+
+        {/* 推广数据 */}
+        <SectionCard
+          title="推广数据"
+          subtitle="7 项推广渠道 · 合计可手填"
+          action={
+            <div className="text-right">
+              <p className="text-xs text-muted-foreground">合计（自动）</p>
+              <p className="text-sm font-semibold">{fmt(promoAutoTotal)}</p>
+            </div>
+          }
+        >
+          <div className="space-y-3">
+            {PROMOTION_FIELDS.map((f) => (
+              <div key={f}>
+                <Label className="text-xs">{f}</Label>
+                <Input
+                  type="number"
+                  value={promo[f] || ""}
+                  onChange={(e) => setPromo({ ...promo, [f]: Number(e.target.value) })}
+                  placeholder="0.00"
+                />
+              </div>
+            ))}
+            <div className="pt-2 border-t">
+              <Label className="text-xs text-[#0071E3]">推广合计（手填覆盖）</Label>
+              <Input
+                type="number"
+                value={promoManualTotal}
+                onChange={(e) => setPromoManualTotal(e.target.value)}
+                placeholder="留空则用自动汇总"
+                className="border-[#0071E3]"
+              />
+              <p className="text-xs text-muted-foreground mt-1">
+                当前生效合计：<span className="font-semibold text-[#0071E3]">{fmt(promoEffectiveTotal)}</span>
+              </p>
+            </div>
+          </div>
+        </SectionCard>
+
+        {/* 自动计算 */}
+        <SectionCard title="自动计算结果" subtitle="保存后立即生效">
+          <div className="grid grid-cols-2 gap-2">
+            <CalcItem label="净销售额" value={fmt(netSales)} color="#34C759" />
+            <CalcItem label="退款率" value={fmtPct(refundRate)} color="#FF9500" />
+            <CalcItem label="推广费用" value={fmt(promoEffectiveTotal)} color="#0071E3" />
+            <CalcItem label="推广占比" value={fmtPct(promotionRate)} color="#0071E3" />
+            <CalcItem label="投产比" value={roi.toFixed(2)} color="#AF52DE" />
+            <CalcItem label="客单价" value={fmt(avgOrderValue)} color="#1D1D1F" />
+            <CalcItem label="转化率" value={fmtPct(conversionRate)} color="#FF3B30" />
+            <CalcItem label="访客数" value={String(visitors)} color="#1D1D1F" />
+          </div>
+        </SectionCard>
+      </div>
+    </div>
+  );
+}
+
+function CalcItem({ label, value, color }: { label: string; value: string; color: string }) {
+  return (
+    <div className="rounded-lg border p-2.5 bg-[#F8F8FA]">
+      <p className="text-[11px] text-muted-foreground">{label}</p>
+      <p className="text-base font-bold" style={{ color }}>{value}</p>
+    </div>
+  );
+}
+
+// =================== 月度成本录入 ===================
+function MonthlyTab() {
+  const { stores } = useStores();
+  const [storeId, setStoreId] = useState<string>("");
+  const now = new Date();
+  const [year, setYear] = useState(now.getFullYear());
+  const [month, setMonth] = useState(now.getMonth() + 1);
+
+  const [costs, setCosts] = useState<Record<string, number>>({});
+  const [note, setNote] = useState("");
+  const [saving, setSaving] = useState(false);
+  const [loading, setLoading] = useState(false);
+
+  useEffect(() => {
+    if (!storeId && stores.length > 0) setStoreId(stores[0].id);
+  }, [stores, storeId]);
+
+  useEffect(() => {
+    const init: Record<string, number> = {};
+    MONTHLY_COST_FIELDS.forEach(f => (init[f.key] = 0));
+    setCosts(init);
+  }, []);
+
+  useEffect(() => {
+    if (!storeId) return;
+    setLoading(true);
+    fetch(`/api/monthly-cost?storeId=${storeId}&year=${year}&month=${month}`)
+      .then(r => r.json())
+      .then(d => {
+        if (d) {
+          const init: Record<string, number> = {};
+          MONTHLY_COST_FIELDS.forEach(f => (init[f.key] = d[f.key] || 0));
+          setCosts(init);
+          setNote(d.note || "");
+        } else {
+          const init: Record<string, number> = {};
+          MONTHLY_COST_FIELDS.forEach(f => (init[f.key] = 0));
+          setCosts(init);
+          setNote("");
+        }
+      })
+      .catch(() => {})
+      .finally(() => setLoading(false));
+  }, [storeId, year, month]);
+
+  const total = Object.values(costs).reduce((a, b) => a + (Number(b) || 0), 0);
+  const fmt = (v: number) => `¥${v.toLocaleString(undefined, { maximumFractionDigits: 2 })}`;
+
+  const handleSave = async () => {
+    if (!storeId) {
+      toast.error("请先选择店铺");
+      return;
+    }
+    setSaving(true);
+    try {
+      const res = await fetch("/api/monthly-cost", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ storeId, year, month, ...costs, note }),
+      });
+      if (res.ok) {
+        toast.success("月度成本已保存", {
+          description: `${year}年${month}月 · 合计 ${fmt(total)}`,
+        });
+      } else {
+        toast.error("保存失败");
+      }
     } catch {
       toast.error("保存失败");
     } finally {
@@ -175,146 +347,54 @@ export function DataEntryPage() {
     }
   };
 
-  const handleReset = () => {
-    setBase({ salesAmount: "0", orderCount: "0", refundAmount: "0", refundOrderCount: "0" });
-    const fields = storeInfo ? (PLATFORM_PROMO[storeInfo.platform] || []) : [];
-    const newPromo: Record<string, string> = {};
-    for (const f of fields) newPromo[f] = "0";
-    setPromo(newPromo);
-    const newCost: Record<string, string> = {};
-    for (const f of COST_FIELDS) newCost[f] = "0";
-    setCost(newCost);
-    toast.info("已重置为默认值");
-  };
-
   return (
-    <div className="space-y-6">
-      <div className="flex items-center justify-between flex-wrap gap-3">
-        <div>
-          <h1 className="text-2xl font-bold tracking-tight">每日数据录入</h1>
-          <p className="text-sm text-muted-foreground mt-1">录入销售/推广/成本，自动计算利润</p>
-        </div>
-        <div className="flex items-center gap-2 flex-wrap">
-          <StoreSelector value={storeId} onChange={setStoreId} allowAll={false} />
-          <Popover open={calOpen} onOpenChange={setCalOpen}>
-            <PopoverTrigger asChild>
-              <Button variant="outline" size="sm">
-                <CalendarIcon className="size-4 mr-1" />
-                {format(date, "yyyy-MM-dd")}
-              </Button>
-            </PopoverTrigger>
-            <PopoverContent className="w-auto p-0">
-              <Calendar
-                mode="single"
-                selected={date}
-                onSelect={(d) => { if (d) { setDate(d); setCalOpen(false); } }}
-                locale={zhCN}
+    <div className="space-y-4">
+      <Card>
+        <CardContent className="p-4 flex flex-wrap items-end gap-4">
+          <div className="space-y-1.5">
+            <Label className="text-xs">选择店铺</Label>
+            <StoreSelector value={storeId || "all"} onChange={(v) => setStoreId(v === "all" ? "" : v)} allowAll={false} />
+          </div>
+          <div className="space-y-1.5">
+            <Label className="text-xs">年份</Label>
+            <Input type="number" value={year} onChange={(e) => setYear(Number(e.target.value))} className="w-[120px]" />
+          </div>
+          <div className="space-y-1.5">
+            <Label className="text-xs">月份</Label>
+            <Input type="number" min={1} max={12} value={month} onChange={(e) => setMonth(Number(e.target.value))} className="w-[100px]" />
+          </div>
+          <div className="ml-auto flex items-center gap-3">
+            {loading && <span className="text-xs text-muted-foreground">加载中...</span>}
+            <div className="text-right">
+              <p className="text-xs text-muted-foreground">成本合计</p>
+              <p className="text-lg font-bold text-[#FF3B30]">{fmt(total)}</p>
+            </div>
+            <Button onClick={handleSave} disabled={saving}>
+              {saving ? "保存中..." : "保存"}
+            </Button>
+          </div>
+        </CardContent>
+      </Card>
+
+      <SectionCard title="月度成本明细" subtitle="12 项成本明细（按月填写）">
+        <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
+          {MONTHLY_COST_FIELDS.map((f) => (
+            <div key={f.key}>
+              <Label className="text-xs">{f.label}</Label>
+              <Input
+                type="number"
+                value={costs[f.key] || ""}
+                onChange={(e) => setCosts({ ...costs, [f.key]: Number(e.target.value) })}
+                placeholder="0.00"
               />
-            </PopoverContent>
-          </Popover>
-          <Button variant="outline" size="sm" onClick={loadExisting} disabled={loading}>
-            <Download className="size-4 mr-1" /> 加载
-          </Button>
-          <Button variant="outline" size="sm" onClick={handleReset}>
-            <RotateCcw className="size-4 mr-1" /> 重置
-          </Button>
-          <Button size="sm" onClick={handleSave} disabled={saving || storeId === "all"}>
-            <Save className="size-4 mr-1" /> {saving ? "保存中..." : "保存"}
-          </Button>
+            </div>
+          ))}
         </div>
-      </div>
-
-      <div className="grid grid-cols-1 lg:grid-cols-3 gap-4">
-        {/* 基础数据 */}
-        <Card className="shadow-sm">
-          <CardContent className="p-5 space-y-4">
-            <div className="flex items-center justify-between">
-              <h3 className="font-semibold text-base">基础销售数据</h3>
-              <span className="text-xs text-muted-foreground">单位：元/单</span>
-            </div>
-            <div className="space-y-3">
-              <div className="space-y-1.5">
-                <Label className="text-xs">销售额（含运费）</Label>
-                <Input type="number" value={base.salesAmount} onChange={e => setBase({ ...base, salesAmount: e.target.value })} />
-              </div>
-              <div className="space-y-1.5">
-                <Label className="text-xs">订单数</Label>
-                <Input type="number" value={base.orderCount} onChange={e => setBase({ ...base, orderCount: e.target.value })} />
-              </div>
-              <div className="space-y-1.5">
-                <Label className="text-xs">退款金额</Label>
-                <Input type="number" value={base.refundAmount} onChange={e => setBase({ ...base, refundAmount: e.target.value })} />
-              </div>
-              <div className="space-y-1.5">
-                <Label className="text-xs">退款订单数</Label>
-                <Input type="number" value={base.refundOrderCount} onChange={e => setBase({ ...base, refundOrderCount: e.target.value })} />
-              </div>
-            </div>
-          </CardContent>
-        </Card>
-
-        {/* 推广数据 */}
-        <Card className="shadow-sm">
-          <CardContent className="p-5 space-y-4">
-            <div className="flex items-center justify-between">
-              <h3 className="font-semibold text-base">推广数据</h3>
-              <span className="text-xs text-muted-foreground">
-                {storeInfo ? `当前平台：${storeInfo.platform}` : "请选择店铺"}
-              </span>
-            </div>
-            {storeId === "all" ? (
-              <p className="text-sm text-muted-foreground py-8 text-center">请先选择店铺</p>
-            ) : (
-              <div className="space-y-3">
-                {Object.keys(promo).map(field => (
-                  <div key={field} className="space-y-1.5">
-                    <Label className="text-xs">{field}</Label>
-                    <Input type="number" value={promo[field]} onChange={e => setPromo({ ...promo, [field]: e.target.value })} />
-                  </div>
-                ))}
-                <div className="flex items-center justify-between pt-2 border-t">
-                  <span className="text-sm text-muted-foreground">推广费合计</span>
-                  <span className="font-bold text-[#0071E3]">{fmtMoney(promoTotal)}</span>
-                </div>
-              </div>
-            )}
-          </CardContent>
-        </Card>
-
-        {/* 成本数据 */}
-        <Card className="shadow-sm">
-          <CardContent className="p-5 space-y-4">
-            <div className="flex items-center justify-between">
-              <h3 className="font-semibold text-base">成本数据</h3>
-              <span className="text-xs text-muted-foreground">含商品/运营成本</span>
-            </div>
-            <div className="space-y-3">
-              {COST_FIELDS.map(field => (
-                <div key={field} className="space-y-1.5">
-                  <Label className="text-xs">{field}</Label>
-                  <Input type="number" value={cost[field] || "0"} onChange={e => setCost({ ...cost, [field]: e.target.value })} />
-                </div>
-              ))}
-              <div className="flex items-center justify-between pt-2 border-t">
-                <span className="text-sm text-muted-foreground">成本合计</span>
-                <span className="font-bold text-[#FF9500]">{fmtMoney(costTotal)}</span>
-              </div>
-            </div>
-          </CardContent>
-        </Card>
-      </div>
-
-      <div>
-        <h2 className="text-sm font-semibold text-muted-foreground mb-3 px-1">自动计算结果（实时）</h2>
-        <KpiRow cards={[
-          { title: "毛利润", value: fmtMoney(grossProfit), subtitle: "销售 - 成本 - 退款", accent: grossProfit >= 0 ? "#34C759" : "#FF3B30" },
-          { title: "净利润", value: fmtMoney(netProfit), subtitle: "毛利 - 推广 - 运营成本", accent: netProfit >= 0 ? "#34C759" : "#FF3B30" },
-          { title: "利润率", value: fmtPct(profitRate), subtitle: "净利 / 销售", accent: "#0071E3" },
-          { title: "ROI", value: roi.toFixed(2), subtitle: `推广费率 ${fmtPct(promotionRate)}`, accent: roi >= 2 ? "#34C759" : "#FF9500" },
-          { title: "客单价", value: fmtMoney(avgOrderValue), subtitle: `单均利润 ${fmtMoney(profitPerOrder)}`, accent: "#AF52DE" },
-          { title: "退款率", value: fmtPct(refundRate), subtitle: `退款 ${fmtMoney(refund)}`, accent: refundRate > 0.08 ? "#FF3B30" : "#FF9500" },
-        ]} />
-      </div>
+        <div className="mt-4">
+          <Label className="text-xs">备注</Label>
+          <Textarea value={note} onChange={(e) => setNote(e.target.value)} placeholder="可填写本月特殊说明..." className="min-h-[60px]" />
+        </div>
+      </SectionCard>
     </div>
   );
 }

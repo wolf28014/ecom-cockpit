@@ -1,12 +1,6 @@
 import { NextRequest, NextResponse } from "next/server";
 import { db } from "@/lib/db";
-
-const PLATFORM_PROMOTION_FIELDS: Record<string, string[]> = {
-  taobao: ["直通车", "万相台", "引力魔方", "淘宝客", "其他"],
-  tmall: ["直通车", "万相台", "引力魔方", "淘宝客", "品牌专区", "其他"],
-  douyin: ["千川投放", "小店随心推", "达人推广", "直播投放", "其他"],
-  pinduoduo: ["多多搜索", "多多场景", "多多进宝", "明星店铺", "其他"],
-};
+import { PROMOTION_FIELDS } from "@/lib/analytics";
 
 // GET: 查询指定店铺某日数据；或最近 N 天列表
 export async function GET(req: NextRequest) {
@@ -22,7 +16,17 @@ export async function GET(req: NextRequest) {
     const record = await db.dailyRecord.findUnique({
       where: { storeId_recordDate: { storeId, recordDate: targetDate } },
     });
-    return NextResponse.json(record);
+    if (record) {
+      // 解析 promotionData
+      let promoData: Record<string, number> = {};
+      try { promoData = JSON.parse(record.promotionData || "{}"); } catch {}
+      return NextResponse.json({
+        ...record,
+        promotionData: promoData,
+        promotionEffectiveTotal: record.promotionManualTotal ?? record.promotionTotal,
+      });
+    }
+    return NextResponse.json(null);
   }
 
   const end = new Date();
@@ -40,8 +44,11 @@ export async function GET(req: NextRequest) {
 // POST: 保存（新增或更新）每日数据
 export async function POST(req: NextRequest) {
   const body = await req.json();
-  const { storeId, recordDate, salesAmount, orderCount, refundAmount, refundOrderCount,
-          promotionData, costData } = body;
+  const {
+    storeId, recordDate,
+    salesAmount, orderCount, refundAmount, visitors,
+    promotionData, promotionManualTotal,
+  } = body;
 
   if (!storeId || !recordDate) {
     return NextResponse.json({ error: "Missing storeId or recordDate" }, { status: 400 });
@@ -50,25 +57,28 @@ export async function POST(req: NextRequest) {
   const date = new Date(recordDate);
   date.setHours(0, 0, 0, 0);
 
-  const promoData = promotionData || {};
-  const promoTotal = Object.values(promoData).reduce((a: number, b: any) => a + Number(b), 0);
-  const cData = costData || {};
-  const costTotal = Object.values(cData).reduce((a: number, b: any) => a + Number(b), 0);
-
-  const goodsCost = Number(cData["商品成本"] || 0);
-  const shipping = Number(cData["运费"] || 0);
-  const package_ = Number(cData["包装"] || 0);
-  const labor = Number(cData["人工"] || 0);
-  const rent = Number(cData["房租"] || 0);
-  const other = Number(cData["其他"] || 0);
+  const promoData: Record<string, number> = promotionData || {};
+  // 确保所有 7 个字段都存在
+  for (const f of PROMOTION_FIELDS) {
+    if (!(f in promoData)) promoData[f] = 0;
+  }
+  const promoAutoTotal = Object.values(promoData).reduce((a: number, b: any) => a + Number(b || 0), 0);
+  // 如果手填了合计，用它；否则用自动汇总
+  const promoEffectiveTotal = promotionManualTotal != null && promotionManualTotal > 0
+    ? Number(promotionManualTotal) : promoAutoTotal;
 
   const sales = Number(salesAmount || 0);
   const orders = Number(orderCount || 0);
   const refund = Number(refundAmount || 0);
-  const refundOrders = Number(refundOrderCount || 0);
+  const visitorCount = Number(visitors || 0);
 
-  const grossProfit = sales - goodsCost - refund;
-  const netProfit = grossProfit - promoTotal - shipping - package_ - labor - rent - other;
+  // 自动计算
+  const netSales = Math.round((sales - refund) * 100) / 100;
+  const refundRate = sales > 0 ? Math.round(refund / sales * 10000) / 10000 : 0;
+  const promotionRate = sales > 0 ? Math.round(promoEffectiveTotal / sales * 10000) / 10000 : 0;
+  const roi = promoEffectiveTotal > 0 ? Math.round(sales / promoEffectiveTotal * 100) / 100 : 0;
+  const avgOrderValue = orders > 0 ? Math.round(sales / orders * 100) / 100 : 0;
+  const conversionRate = visitorCount > 0 ? Math.round(orders / visitorCount * 10000) / 10000 : 0;
 
   const existing = await db.dailyRecord.findUnique({
     where: { storeId_recordDate: { storeId, recordDate: date } },
@@ -78,19 +88,17 @@ export async function POST(req: NextRequest) {
     salesAmount: sales,
     orderCount: orders,
     refundAmount: refund,
-    refundOrderCount: refundOrders,
+    visitors: visitorCount,
     promotionData: JSON.stringify(promoData),
-    promotionTotal: promoTotal,
-    costData: JSON.stringify(cData),
-    costTotal,
-    grossProfit: Math.round(grossProfit * 100) / 100,
-    netProfit: Math.round(netProfit * 100) / 100,
-    profitRate: sales > 0 ? Math.round(netProfit / sales * 10000) / 10000 : 0,
-    roi: promoTotal > 0 ? Math.round(sales / promoTotal * 100) / 100 : 0,
-    avgOrderValue: orders > 0 ? Math.round(sales / orders * 100) / 100 : 0,
-    profitPerOrder: orders > 0 ? Math.round(netProfit / orders * 100) / 100 : 0,
-    refundRate: orders > 0 ? Math.round(refundOrders / orders * 10000) / 10000 : 0,
-    promotionRate: sales > 0 ? Math.round(promoTotal / sales * 10000) / 10000 : 0,
+    promotionTotal: Math.round(promoAutoTotal * 100) / 100,
+    promotionManualTotal: promotionManualTotal != null && promotionManualTotal > 0
+      ? Number(promotionManualTotal) : null,
+    netSales,
+    refundRate,
+    promotionRate,
+    roi,
+    avgOrderValue,
+    conversionRate,
   };
 
   if (existing) {
@@ -107,7 +115,7 @@ export async function POST(req: NextRequest) {
   }
 }
 
-// 暴露推广字段配置
+// 推广字段元信息
 export async function OPTIONS() {
-  return NextResponse.json({ platforms: PLATFORM_PROMOTION_FIELDS });
+  return NextResponse.json({ promotionFields: PROMOTION_FIELDS });
 }

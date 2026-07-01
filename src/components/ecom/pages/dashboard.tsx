@@ -1,8 +1,10 @@
 "use client";
 
-import { useState, useEffect } from "react";
+import { useState, useEffect, useCallback } from "react";
 import { KpiRow, SectionCard } from "@/components/ecom/kpi";
 import { StoreSelector, RefreshButton } from "@/components/ecom/store-selector";
+import { Card, CardContent } from "@/components/ui/card";
+import { ToggleGroup, ToggleGroupItem } from "@/components/ui/toggle-group";
 import {
   BarChart, Bar, LineChart, Line, PieChart, Pie, Cell,
   XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer,
@@ -14,34 +16,41 @@ const PIE_COLORS = ["#0071E3", "#34C759", "#FF9500", "#AF52DE", "#FF3B30", "#585
 
 export function DashboardPage() {
   const [storeId, setStoreId] = useState("all");
+  const [yearType, setYearType] = useState<"natural" | "seasonal">("natural");
   const [data, setData] = useState<any>(null);
   const [loading, setLoading] = useState(true);
 
-  const loadData = () => {
+  const loadData = useCallback(() => {
     setLoading(true);
     const sid = storeId === "all" ? "" : `&storeId=${storeId}`;
     fetch(`/api/dashboard?days=30${sid}`)
       .then(r => r.json())
       .then(d => { setData(d); setLoading(false); })
       .catch(() => setLoading(false));
-  };
+  }, [storeId]);
 
   // eslint-disable-next-line react-hooks/set-state-in-effect
-  useEffect(() => { loadData(); }, [storeId]);
+  useEffect(() => { loadData(); }, [loadData]);
 
   const today = data?.today;
   const trend = data?.trend || [];
   const promotion = data?.promotion || {};
-  const cost = data?.cost || {};
   const progress = data?.progress || {};
   const changes = data?.changes || {};
 
+  // 根据年类型选择数据
+  const yearSummary = yearType === "seasonal" ? data?.seasonalYear : data?.naturalYear;
+  const cumulative = yearType === "seasonal" ? data?.seasonalCumulative : data?.naturalCumulative;
+  const yearLabel = yearType === "seasonal" ? "季节年" : "自然年";
+
   const fmtMoney = (v: number) => `¥${(v || 0).toLocaleString(undefined, { maximumFractionDigits: 0 })}`;
+  const fmtMoney2 = (v: number) => `¥${(v || 0).toLocaleString(undefined, { maximumFractionDigits: 2 })}`;
   const fmtPct = (v: number) => `${(v * 100).toFixed(1)}%`;
+  const fmtPct2 = (v: number) => `${(v * 100).toFixed(2)}%`;
 
   return (
     <div className="space-y-6">
-      <div className="flex items-center justify-between">
+      <div className="flex items-center justify-between flex-wrap gap-3">
         <div>
           <h1 className="text-2xl font-bold tracking-tight">首页驾驶舱</h1>
           <p className="text-sm text-muted-foreground mt-1">实时掌握经营全貌</p>
@@ -52,95 +61,110 @@ export function DashboardPage() {
         </div>
       </div>
 
+      {/* 今日 KPI */}
       <div>
         <h2 className="text-sm font-semibold text-muted-foreground mb-3 px-1">今日概览</h2>
         <KpiRow cards={[
-          { title: "今日销售额", value: fmtMoney(today?.salesAmount || 0), subtitle: `${today?.orderCount || 0} 单`, trend: changes.sales, trendLabel: "环比昨日" },
-          { title: "今日净利润", value: fmtMoney(today?.netProfit || 0), subtitle: `利润率 ${fmtPct(today?.profitRate || 0)}`, trend: changes.profit, trendLabel: "环比昨日", accent: "#34C759" },
-          { title: "今日 ROI", value: (today?.roi || 0).toFixed(2), subtitle: `推广费率 ${fmtPct(today?.promotionRate || 0)}`, accent: "#0071E3" },
-          { title: "今日客单价", value: fmtMoney(today?.avgOrderValue || 0), subtitle: `单均利润 ${fmtMoney(today?.profitPerOrder || 0)}`, accent: "#AF52DE" },
-          { title: "今日退款率", value: fmtPct(today?.refundRate || 0), subtitle: `退款 ${fmtMoney(today?.refundAmount || 0)}`, accent: (today?.refundRate || 0) > 0.08 ? "#FF3B30" : "#FF9500" },
+          { title: "今日销售额", value: fmtMoney(today?.salesAmount || 0), subtitle: `${today?.orderCount || 0} 单 · ${today?.visitors || 0} 访客`, trend: changes.sales, trendLabel: "环比" },
+          { title: "今日退款", value: fmtMoney(today?.refundAmount || 0), subtitle: `退款率 ${fmtPct(today?.refundRate || 0)}`, trend: changes.refund, trendLabel: "环比", accent: "#FF9500" },
+          { title: "今日净销售额", value: fmtMoney(today?.netSales || 0), subtitle: `销售 - 退款`, trend: changes.netSales, trendLabel: "环比", accent: "#34C759" },
+          { title: "今日投产比", value: (today?.roi || 0).toFixed(2), subtitle: `推广 ${fmtMoney(today?.promotionTotal || 0)}`, accent: "#0071E3" },
+          { title: "今日转化率", value: fmtPct2(today?.conversionRate || 0), subtitle: `客单价 ${fmtMoney(today?.avgOrderValue || 0)}`, accent: "#AF52DE" },
         ]} />
       </div>
 
+      {/* 周期对比 */}
       <div>
         <h2 className="text-sm font-semibold text-muted-foreground mb-3 px-1">周期对比</h2>
         <KpiRow cards={[
-          { title: "本周销售额", value: fmtMoney(data?.week?.salesAmount || 0), subtitle: `本周利润 ${fmtMoney(data?.week?.netProfit || 0)}`, accent: "#1D1D1F" },
-          { title: "本月销售额", value: fmtMoney(data?.month?.salesAmount || 0), subtitle: `本月利润 ${fmtMoney(data?.month?.netProfit || 0)}`, accent: "#1D1D1F" },
-          { title: "本月利润率", value: fmtPct(data?.month?.profitRate || 0), subtitle: `推广费率 ${fmtPct(data?.month?.promotionRate || 0)}`, accent: "#1D1D1F" },
-          { title: "年度 GMV", value: fmtMoney(data?.year?.salesAmount || 0), subtitle: `年度利润 ${fmtMoney(data?.year?.netProfit || 0)}`, accent: "#1D1D1F" },
+          { title: "本周销售额", value: fmtMoney(data?.week?.salesAmount || 0), subtitle: `净销售 ${fmtMoney(data?.week?.netSales || 0)}`, accent: "#1D1D1F" },
+          { title: "本月销售额", value: fmtMoney(data?.month?.salesAmount || 0), subtitle: `净销售 ${fmtMoney(data?.month?.netSales || 0)}`, accent: "#1D1D1F" },
+          { title: "本月投产比", value: (data?.month?.roi || 0).toFixed(2), subtitle: `推广占比 ${fmtPct(data?.month?.promotionRate || 0)}`, accent: "#0071E3" },
+          { title: `${yearLabel}销售额`, value: fmtMoney(yearSummary?.salesAmount || 0), subtitle: `净销售 ${fmtMoney(yearSummary?.netSales || 0)}`, accent: "#1D1D1F" },
         ]} />
       </div>
 
-      <SectionCard title="经营趋势" subtitle="近 30 天销售/利润率组合图">
+      {/* 年度累积指标 + 自然年/季节年切换 */}
+      <SectionCard
+        title={`${yearLabel}累积指标`}
+        subtitle="年度累计数据 · 支持自然年/季节年切换"
+        action={
+          <ToggleGroup type="single" value={yearType} onValueChange={(v) => v && setYearType(v as "natural" | "seasonal")}>
+            <ToggleGroupItem value="natural" className="text-xs">自然年</ToggleGroupItem>
+            <ToggleGroupItem value="seasonal" className="text-xs">季节年</ToggleGroupItem>
+          </ToggleGroup>
+        }
+      >
+        <div className="grid grid-cols-2 md:grid-cols-3 lg:grid-cols-4 gap-3">
+          <CumItem label="累积销售额" value={fmtMoney2(cumulative?.cumulativeSales || 0)} color="#0071E3" />
+          <CumItem label="累积退款" value={fmtMoney2(cumulative?.cumulativeRefund || 0)} color="#FF9500" />
+          <CumItem label="累积净销售额" value={fmtMoney2(cumulative?.cumulativeNetSales || 0)} color="#34C759" />
+          <CumItem label="累积推广费" value={fmtMoney2(cumulative?.cumulativePromotion || 0)} color="#AF52DE" />
+          <CumItem label="累积退款率" value={fmtPct2(cumulative?.cumulativeRefundRate || 0)} color="#FF9500" />
+          <CumItem label="累积推广占比" value={fmtPct2(cumulative?.cumulativePromotionRate || 0)} color="#0071E3" />
+          <CumItem label="累积净推广费率" value={fmtPct2(cumulative?.cumulativeNetPromotionRate || 0)} color="#FF3B30" />
+          <CumItem
+            label="同比去年"
+            value={`${(cumulative?.yoyGrowth || 0) > 0 ? "+" : ""}${((cumulative?.yoyGrowth || 0) * 100).toFixed(1)}%`}
+            color={(cumulative?.yoyGrowth || 0) >= 0 ? "#34C759" : "#FF3B30"}
+          />
+        </div>
+      </SectionCard>
+
+      {/* 趋势图 */}
+      <SectionCard title="经营趋势" subtitle="近 30 天销售/净销售/投产比">
         <div className="h-[320px]">
           <ResponsiveContainer width="100%" height="100%">
-            <ComposedChart data={trend.map((p: any) => ({ ...p, date: p.date.slice(5), profitRatePct: (p.profitRate * 100).toFixed(1) }))}>
+            <ComposedChart data={trend.map((p: any) => ({
+              ...p,
+              date: p.date.slice(5),
+              roiNum: p.roi,
+            }))}>
               <CartesianGrid strokeDasharray="3 3" stroke="#F2F2F7" />
               <XAxis dataKey="date" stroke="#6E6E73" fontSize={11} tickLine={false} />
               <YAxis yAxisId="left" stroke="#6E6E73" fontSize={11} tickLine={false} axisLine={false} />
-              <YAxis yAxisId="right" orientation="right" stroke="#6E6E73" fontSize={11} tickLine={false} axisLine={false} unit="%" />
+              <YAxis yAxisId="right" orientation="right" stroke="#6E6E73" fontSize={11} tickLine={false} axisLine={false} />
               <Tooltip
                 contentStyle={{ background: "#1D1D1F", border: "none", borderRadius: 8, color: "#fff", fontSize: 12 }}
-                formatter={(v: any, name: any) => name === "销售额" ? `¥${v.toLocaleString()}` : `${v}%`}
+                formatter={(v: any, name: any) => {
+                  if (name === "销售额" || name === "净销售额") return `¥${v.toLocaleString()}`;
+                  return v;
+                }}
               />
               <Legend wrapperStyle={{ fontSize: 12 }} />
-              <Bar yAxisId="left" dataKey="sales" name="销售额" fill="#0071E3" radius={[4, 4, 0, 0]} barSize={16} />
-              <Line yAxisId="right" type="monotone" dataKey="profitRatePct" name="利润率" stroke="#FF9500" strokeWidth={2} dot={false} />
+              <Bar yAxisId="left" dataKey="sales" name="销售额" fill="#0071E3" radius={[4, 4, 0, 0]} barSize={14} />
+              <Bar yAxisId="left" dataKey="netSales" name="净销售额" fill="#34C759" radius={[4, 4, 0, 0]} barSize={14} />
+              <Line yAxisId="right" type="monotone" dataKey="roiNum" name="投产比" stroke="#FF9500" strokeWidth={2} dot={false} />
             </ComposedChart>
           </ResponsiveContainer>
         </div>
       </SectionCard>
 
-      <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-        <SectionCard title="推广渠道分布" subtitle="近 30 天">
-          <div className="h-[280px]">
-            <ResponsiveContainer width="100%" height="100%">
-              <PieChart>
-                <Pie
-                  data={Object.entries(promotion).map(([k, v]) => ({ name: k, value: v as number }))}
-                  dataKey="value"
-                  nameKey="name"
-                  cx="40%" cy="50%"
-                  outerRadius={90} innerRadius={50}
-                  paddingAngle={2}
-                >
-                  {Object.entries(promotion).map(([k, v], i) => (
-                    <Cell key={k} fill={PIE_COLORS[i % PIE_COLORS.length]} />
-                  ))}
-                </Pie>
-                <Tooltip formatter={(v: any) => `¥${v.toLocaleString()}`} contentStyle={{ background: "#1D1D1F", border: "none", borderRadius: 8, color: "#fff", fontSize: 12 }} />
-                <Legend layout="vertical" align="right" verticalAlign="middle" wrapperStyle={{ fontSize: 12 }} />
-              </PieChart>
-            </ResponsiveContainer>
-          </div>
-        </SectionCard>
+      {/* 推广分布 */}
+      <SectionCard title="推广渠道分布" subtitle="近 30 天">
+        <div className="h-[280px]">
+          <ResponsiveContainer width="100%" height="100%">
+            <PieChart>
+              <Pie
+                data={Object.entries(promotion).map(([k, v]) => ({ name: k, value: v as number }))}
+                dataKey="value"
+                nameKey="name"
+                cx="40%" cy="50%"
+                outerRadius={90} innerRadius={50}
+                paddingAngle={2}
+              >
+                {Object.entries(promotion).map(([k, v], i) => (
+                  <Cell key={k} fill={PIE_COLORS[i % PIE_COLORS.length]} />
+                ))}
+              </Pie>
+              <Tooltip formatter={(v: any) => `¥${v.toLocaleString()}`} contentStyle={{ background: "#1D1D1F", border: "none", borderRadius: 8, color: "#fff", fontSize: 12 }} />
+              <Legend layout="vertical" align="right" verticalAlign="middle" wrapperStyle={{ fontSize: 12 }} />
+            </PieChart>
+          </ResponsiveContainer>
+        </div>
+      </SectionCard>
 
-        <SectionCard title="成本结构" subtitle="近 30 天">
-          <div className="h-[280px]">
-            <ResponsiveContainer width="100%" height="100%">
-              <PieChart>
-                <Pie
-                  data={Object.entries(cost).map(([k, v]) => ({ name: k, value: v as number }))}
-                  dataKey="value"
-                  nameKey="name"
-                  cx="40%" cy="50%"
-                  outerRadius={90} innerRadius={50}
-                  paddingAngle={2}
-                >
-                  {Object.entries(cost).map(([k, v], i) => (
-                    <Cell key={k} fill={PIE_COLORS[i % PIE_COLORS.length]} />
-                  ))}
-                </Pie>
-                <Tooltip formatter={(v: any) => `¥${v.toLocaleString()}`} contentStyle={{ background: "#1D1D1F", border: "none", borderRadius: 8, color: "#fff", fontSize: 12 }} />
-                <Legend layout="vertical" align="right" verticalAlign="middle" wrapperStyle={{ fontSize: 12 }} />
-              </PieChart>
-            </ResponsiveContainer>
-          </div>
-        </SectionCard>
-      </div>
-
+      {/* 利润目标 */}
       <SectionCard title="利润目标进度" subtitle="年度/季度/月度完成情况">
         <div className="space-y-4">
           {Object.keys(progress).length === 0 && (
@@ -165,6 +189,15 @@ export function DashboardPage() {
           })}
         </div>
       </SectionCard>
+    </div>
+  );
+}
+
+function CumItem({ label, value, color }: { label: string; value: string; color: string }) {
+  return (
+    <div className="rounded-lg border border-border/60 p-3 bg-[#F8F8FA]">
+      <p className="text-xs text-muted-foreground">{label}</p>
+      <p className="text-lg font-bold mt-1" style={{ color }}>{value}</p>
     </div>
   );
 }

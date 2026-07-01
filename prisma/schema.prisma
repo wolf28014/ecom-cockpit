@@ -27,6 +27,7 @@ model Store {
   targets      ProfitTarget[]
   aiReports    AiReport[]
   cashFlows    CashFlow[]
+  monthlyCosts MonthlyCost[]
 }
 
 // ============== SKU ==============
@@ -50,34 +51,41 @@ model Sku {
 }
 
 // ============== 每日经营数据 ==============
+// 推广渠道（固定 7 项）：货品全站推广 / 关键词推广 / 人群推广 / 店铺直达 / 内容营销 / 淘宝客 / 其它
+// 成本改为月度录入（见 MonthlyCost）
 model DailyRecord {
   id        String   @id @default(cuid())
   storeId   String
   recordDate DateTime
 
-  // 销售数据
-  salesAmount      Float @default(0)
-  orderCount       Int   @default(0)
-  refundAmount     Float @default(0)
-  refundOrderCount Int   @default(0)
+  // 销售数据（访客数新增；退款订单数废弃但保留兼容）
+  salesAmount      Float @default(0)   // 销售额
+  orderCount       Int   @default(0)   // 订单数
+  refundAmount     Float @default(0)   // 退款金额
+  visitors         Int   @default(0)   // 访客数（新增）
+  refundOrderCount Int   @default(0)   // 废弃保留
 
-  // 推广（JSON 字符串）
-  promotionData  String @default("{}") // JSON: {"直通车": 100, ...}
-  promotionTotal Float  @default(0)
+  // 推广数据（JSON 字符串，固定 7 个渠道）
+  // {"货品全站推广": x, "关键词推广": x, "人群推广": x, "店铺直达": x, "内容营销": x, "淘宝客": x, "其它": x}
+  promotionData       String @default("{}")
+  promotionTotal      Float  @default(0)  // 自动汇总
+  promotionManualTotal Float?              // 手填合计（如果填了，以此为准）
 
-  // 成本（JSON 字符串）
+  // 自动计算（运行时可重算）
+  netSales     Float @default(0)   // 净销售额 = 销售 - 退款
+  refundRate   Float @default(0)   // 退款率 = 退款 / 销售
+  promotionRate Float @default(0)  // 推广占比 = 推广 / 销售
+  roi          Float @default(0)   // 投产比 = 销售 / 推广
+  avgOrderValue Float @default(0)  // 客单价 = 销售 / 订单
+  conversionRate Float @default(0) // 转化率 = 订单 / 访客
+
+  // 旧字段保留兼容（不再使用）
   costData  String @default("{}")
   costTotal Float  @default(0)
-
-  // 自动计算
-  grossProfit      Float @default(0)
-  netProfit        Float @default(0)
-  profitRate       Float @default(0)
-  roi              Float @default(0)
-  avgOrderValue    Float @default(0)
-  profitPerOrder   Float @default(0)
-  refundRate       Float @default(0)
-  promotionRate    Float @default(0)
+  grossProfit Float @default(0)
+  netProfit   Float @default(0)
+  profitRate  Float @default(0)
+  profitPerOrder Float @default(0)
 
   note      String?
   createdAt DateTime @default(now())
@@ -88,6 +96,39 @@ model DailyRecord {
 
   @@unique([storeId, recordDate])
   @@index([recordDate])
+}
+
+// ============== 月度成本（按月填写） ==============
+// 12 项明细成本
+model MonthlyCost {
+  id        String   @id @default(cuid())
+  storeId   String
+  year      Int
+  month     Int   // 1-12
+
+  goodsCost        Float @default(0)  // 货品成本
+  redPacket        Float @default(0)  // 红包
+  labor            Float @default(0)  // 人工
+  other            Float @default(0)  // 其它
+  consumerExperience Float @default(0) // 消费者体验提升计划服务费
+  bnplTechFee      Float @default(0)  // 先用后付技术服务费
+  basicSoftwareFee Float @default(0)  // 基础软件服务费
+  redPacketAdvance Float @default(0)  // 限时红包代商家垫付扣回
+  logistics        Float @default(0)  // 商家集运物流服务费
+  brandGiftFee     Float @default(0)  // 品牌新享淘宝礼金软件服务费
+  charity          Float @default(0)  // 公益宝贝
+  quickPaymentFee  Float @default(0)  // 淘宝极速回款手动回款服务费
+  marketingPlatform Float @default(0) // 营销平台
+
+  totalCost Float @default(0)  // 自动汇总
+  note      String?
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  store Store @relation(fields: [storeId], references: [id], onDelete: Cascade)
+
+  @@unique([storeId, year, month])
+  @@index([storeId, year])
 }
 
 model DailySku {
