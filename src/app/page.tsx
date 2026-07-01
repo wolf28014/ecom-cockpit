@@ -3,7 +3,7 @@
 import { useState, useEffect } from "react";
 import {
   LayoutDashboard, Store, PencilLine, UploadCloud, BarChart3, Bot,
-  Target, Wallet, Package, FileText, Settings, Database, Bell, TrendingUp, LogOut,
+  Target, Package, Settings, Bell, TrendingUp, LogOut,
 } from "lucide-react";
 import { cn } from "@/lib/utils";
 import { Badge } from "@/components/ui/badge";
@@ -21,18 +21,14 @@ import { StoresPage } from "@/components/ecom/pages/stores";
 import { DataEntryPage } from "@/components/ecom/pages/data-entry";
 import { DataImportPage } from "@/components/ecom/pages/data-import";
 import { AnalyticsPage } from "@/components/ecom/pages/analytics";
-import { AiCenterPage } from "@/components/ecom/pages/ai-center";
-import { ProfitTargetPage } from "@/components/ecom/pages/profit-target";
-import { CashflowPage } from "@/components/ecom/pages/cashflow";
+import { ProfitCenterPage } from "@/components/ecom/pages/profit-center";
 import { SkuPage } from "@/components/ecom/pages/sku";
-import { ReportsPage } from "@/components/ecom/pages/reports";
+import { AiCenterPage } from "@/components/ecom/pages/ai-center";
 import { SettingsPage } from "@/components/ecom/pages/settings";
-import { BackupPage } from "@/components/ecom/pages/backup";
 
 type PageKey =
   | "dashboard" | "stores" | "data-entry" | "data-import" | "analytics"
-  | "ai-center" | "profit-target" | "cashflow" | "sku" | "reports"
-  | "settings" | "backup";
+  | "profit-center" | "sku" | "ai-center" | "settings";
 
 interface NavItem {
   key: PageKey;
@@ -47,13 +43,10 @@ const NAV_ITEMS: NavItem[] = [
   { key: "data-entry", label: "数据录入", icon: PencilLine, group: "data" },
   { key: "data-import", label: "Excel 导入", icon: UploadCloud, group: "data" },
   { key: "analytics", label: "经营分析", icon: BarChart3, group: "analysis" },
+  { key: "profit-center", label: "利润中心", icon: Target, group: "analysis" },
   { key: "sku", label: "SKU 分析", icon: Package, group: "analysis" },
-  { key: "profit-target", label: "利润目标", icon: Target, group: "analysis" },
-  { key: "cashflow", label: "现金流预测", icon: Wallet, group: "ai" },
   { key: "ai-center", label: "AI 经营中心", icon: Bot, group: "ai" },
-  { key: "reports", label: "报表中心", icon: FileText, group: "system" },
   { key: "settings", label: "系统设置", icon: Settings, group: "system" },
-  { key: "backup", label: "数据备份", icon: Database, group: "system" },
 ];
 
 const GROUP_LABELS: Record<string, string> = {
@@ -67,16 +60,13 @@ const GROUP_LABELS: Record<string, string> = {
 const PAGE_TITLES: Record<PageKey, { title: string; subtitle: string }> = {
   dashboard: { title: "首页驾驶舱", subtitle: "实时掌握经营全貌" },
   stores: { title: "多店铺管理", subtitle: "管理你的全平台电商店铺" },
-  "data-entry": { title: "每日数据录入", subtitle: "录入销售/推广/成本，自动计算利润" },
-  "data-import": { title: "Excel 数据导入", subtitle: "批量导入每日经营数据" },
-  analytics: { title: "经营分析中心", subtitle: "日/周/月/年多维度数据分析" },
-  "ai-center": { title: "AI 经营中心", subtitle: "基于 GLM-4 大模型，生成深度分析与建议" },
-  "profit-target": { title: "利润目标管理", subtitle: "设定目标、跟踪进度、AI 预测完成概率" },
-  cashflow: { title: "现金流预测", subtitle: "基于历史数据预测未来现金流" },
-  sku: { title: "SKU 利润分析", subtitle: "爆款/利润/滞销/高退款多维度 SKU 分析" },
-  reports: { title: "报表中心", subtitle: "汇总数据，导出报表" },
-  settings: { title: "系统设置", subtitle: "配置 AI 模型、公司信息与预警阈值" },
-  backup: { title: "数据备份", subtitle: "保护数据安全，支持手动/自动备份" },
+  "data-entry": { title: "数据录入", subtitle: "每日数据 + 月度成本" },
+  "data-import": { title: "Excel 导入", subtitle: "批量导入每日数据 + 聚水潭SKU" },
+  analytics: { title: "经营分析", subtitle: "日 / 月 / 自然年 / 季节年" },
+  "profit-center": { title: "利润中心", subtitle: "利润计算 · 利润目标 · 现金流预测" },
+  "ai-center": { title: "AI 经营中心", subtitle: "GLM-4 智能分析与建议" },
+  sku: { title: "SKU 分析", subtitle: "爆款/利润/滞销/高退款" },
+  settings: { title: "系统设置", subtitle: "AI 配置 / 预警阈值 / 备份" },
 };
 
 export default function Home() {
@@ -185,46 +175,17 @@ function AppContent({
   };
 
   const renderPage = () => {
-    // 所有页面都渲染，通过 display 控制显隐
-    // 这样切换页面时不会卸载组件，保留状态和数据
     return (
       <>
-        <div style={{ display: activePage === "dashboard" ? "block" : "none" }}>
-          <DashboardPage />
-        </div>
-        <div style={{ display: activePage === "stores" ? "block" : "none" }}>
-          <StoresPage />
-        </div>
-        <div style={{ display: activePage === "data-entry" ? "block" : "none" }}>
-          <DataEntryPage />
-        </div>
-        <div style={{ display: activePage === "data-import" ? "block" : "none" }}>
-          <DataImportPage />
-        </div>
-        <div style={{ display: activePage === "analytics" ? "block" : "none" }}>
-          <AnalyticsPage />
-        </div>
-        <div style={{ display: activePage === "ai-center" ? "block" : "none" }}>
-          <AiCenterPage />
-        </div>
-        <div style={{ display: activePage === "profit-target" ? "block" : "none" }}>
-          <ProfitTargetPage />
-        </div>
-        <div style={{ display: activePage === "cashflow" ? "block" : "none" }}>
-          <CashflowPage />
-        </div>
-        <div style={{ display: activePage === "sku" ? "block" : "none" }}>
-          <SkuPage />
-        </div>
-        <div style={{ display: activePage === "reports" ? "block" : "none" }}>
-          <ReportsPage />
-        </div>
-        <div style={{ display: activePage === "settings" ? "block" : "none" }}>
-          <SettingsPage />
-        </div>
-        <div style={{ display: activePage === "backup" ? "block" : "none" }}>
-          <BackupPage />
-        </div>
+        <div style={{ display: activePage === "dashboard" ? "block" : "none" }}><DashboardPage /></div>
+        <div style={{ display: activePage === "stores" ? "block" : "none" }}><StoresPage /></div>
+        <div style={{ display: activePage === "data-entry" ? "block" : "none" }}><DataEntryPage /></div>
+        <div style={{ display: activePage === "data-import" ? "block" : "none" }}><DataImportPage /></div>
+        <div style={{ display: activePage === "analytics" ? "block" : "none" }}><AnalyticsPage /></div>
+        <div style={{ display: activePage === "profit-center" ? "block" : "none" }}><ProfitCenterPage /></div>
+        <div style={{ display: activePage === "sku" ? "block" : "none" }}><SkuPage /></div>
+        <div style={{ display: activePage === "ai-center" ? "block" : "none" }}><AiCenterPage /></div>
+        <div style={{ display: activePage === "settings" ? "block" : "none" }}><SettingsPage /></div>
       </>
     );
   };
