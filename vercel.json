@@ -1,0 +1,14 @@
+{
+  "$schema": "https://openapi.vercel.sh/vercel.json",
+  "framework": "nextjs",
+  "buildCommand": "bun run db:generate && bun run build",
+  "installCommand": "bun install",
+  "functions": {
+    "src/app/api/**/route.ts": {
+      "maxDuration": 60
+    }
+  },
+  "github": {
+    "silent": true
+  }
+}

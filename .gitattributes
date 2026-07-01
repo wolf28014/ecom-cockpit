@@ -1,0 +1,3 @@
+# schema.prisma 不做特殊处理，但通过 dev-switch-db.sh 管理
+# 部署到 Vercel 前请确保 schema 是 postgresql
+prisma/schema.prisma merge=ours

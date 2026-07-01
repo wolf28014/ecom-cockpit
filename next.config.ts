@@ -1,12 +1,15 @@
 import type { NextConfig } from "next";
 
 const nextConfig: NextConfig = {
-  output: "standalone",
-  /* config options here */
+  // Vercel 部署不需要 standalone，使用默认构建
   typescript: {
     ignoreBuildErrors: true,
   },
   reactStrictMode: false,
+  // 兼容 Prisma 在 Vercel Edge Runtime / Serverless 环境
+  experimental: {
+    serverComponentsExternalPackages: ["@prisma/client", "@node-rs/argon2"],
+  },
 };
 
 export default nextConfig;
