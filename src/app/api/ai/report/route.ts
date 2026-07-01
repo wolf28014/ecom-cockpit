@@ -188,11 +188,11 @@ ${Object.entries(promo).map(([k, v]) => `  - ${k}: ¥${v.toLocaleString()}`).joi
 请用 Markdown 输出，每个维度 2-3 条具体建议，附数据依据。`;
   }
 
-  const content = await callGLM4(SYSTEM_PROMPT_REPORT, userPrompt);
+  const generatedContent = await callGLM4(SYSTEM_PROMPT_REPORT, userPrompt);
 
   // 提取摘要
   let summary = "";
-  for (const line of content.split("\n")) {
+  for (const line of generatedContent.split("\n")) {
     const s = line.trim();
     if (s && !s.startsWith("#") && !s.startsWith("-")) {
       summary = s.slice(0, 150);
@@ -207,7 +207,7 @@ ${Object.entries(promo).map(([k, v]) => `  - ${k}: ¥${v.toLocaleString()}`).joi
       periodStart: today,
       periodEnd: today,
       title: `AI ${reportType === "daily" ? "经营日报" : reportType === "weekly" ? "经营周报" : reportType === "monthly" ? "经营月报" : "经营建议"} - ${todayStr}`,
-      content,
+      content: generatedContent,
       summary,
     },
   });
