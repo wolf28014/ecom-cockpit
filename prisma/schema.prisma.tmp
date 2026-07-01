@@ -1,0 +1,12 @@
+// 电商经营驾驶舱 Pro - 数据库 Schema
+// 数据库: PostgreSQL（适配 Vercel Postgres，支持跨设备同步）
+
+generator client {
+  provider        = "prisma-client-js"
+  binaryTargets   = ["native", "linux-x64-openssl-1.1.x", "linux-arm64-openssl-1.1.x", "debian-openssl-1.1.x"]
+}
+
+datasource db {
+  provider = "postgresql"
+  url      = env("DATABASE_URL")
+}
