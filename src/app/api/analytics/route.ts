@@ -155,8 +155,8 @@ export async function GET(req: NextRequest) {
 
   return NextResponse.json({
     today, dayData,
-    week, weekData,
-    month, monthData,
+    weekData,
+    monthData,
     naturalYear, seasonalYear,
     naturalCumulative, seasonalCumulative,
     trend30,
