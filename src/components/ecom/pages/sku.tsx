@@ -2,9 +2,15 @@
 
 import { useState, useEffect } from "react";
 import { KpiRow, SectionCard } from "@/components/ecom/kpi";
-import { StoreSelector, RefreshButton } from "@/components/ecom/store-selector";
+import { StoreSelector, RefreshButton, useStores } from "@/components/ecom/store-selector";
 import { Tabs, TabsList, TabsTrigger, TabsContent } from "@/components/ui/tabs";
 import { Badge } from "@/components/ui/badge";
+import { Button } from "@/components/ui/button";
+import { Input } from "@/components/ui/input";
+import { Label } from "@/components/ui/label";
+import {
+  Dialog, DialogContent, DialogHeader, DialogTitle, DialogTrigger,
+} from "@/components/ui/dialog";
 import {
   Select, SelectContent, SelectItem, SelectTrigger, SelectValue,
 } from "@/components/ui/select";
@@ -14,6 +20,7 @@ import {
 import {
   BarChart, Bar, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer, Cell,
 } from "recharts";
+import { Plus, Trash2, Loader2 } from "lucide-react";
 import { toast } from "sonner";
 
 const fmtMoney = (v: number) => `¥${(v || 0).toLocaleString(undefined, { maximumFractionDigits: 0 })}`;
@@ -30,10 +37,24 @@ const PIE_COLORS = ["#0071E3", "#34C759", "#FF9500", "#AF52DE", "#FF3B30", "#585
 const TOOLTIP_STYLE = { background: "#1D1D1F", border: "none", borderRadius: 8, color: "#fff", fontSize: 12 };
 
 export function SkuPage() {
+  const { stores } = useStores();
   const [storeId, setStoreId] = useState("all");
   const [days, setDays] = useState(30);
   const [data, setData] = useState<any>(null);
   const [loading, setLoading] = useState(true);
+  const [showAddDialog, setShowAddDialog] = useState(false);
+  const [clearing, setClearing] = useState(false);
+
+  // 新增 SKU 表单
+  const [newSku, setNewSku] = useState({
+    storeId: "",
+    skuCode: "",
+    skuName: "",
+    category: "",
+    unitCost: 0,
+    unitPrice: 0,
+    stock: 0,
+  });
 
   const loadData = () => {
     setLoading(true);
@@ -44,8 +65,69 @@ export function SkuPage() {
       .catch(() => { toast.error("加载失败"); setLoading(false); });
   };
 
-  // eslint-disable-next-line react-hooks/set-state-in-effect
   useEffect(() => { loadData(); }, [storeId, days]);
+
+  // 新增 SKU
+  const handleAddSku = async () => {
+    if (!newSku.storeId || !newSku.skuCode || !newSku.skuName) {
+      toast.error("请填写店铺、SKU编码和名称");
+      return;
+    }
+    try {
+      const res = await fetch("/api/sku-manage", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify(newSku),
+      });
+      if (res.ok) {
+        toast.success("SKU 添加成功");
+        setShowAddDialog(false);
+        setNewSku({ storeId: "", skuCode: "", skuName: "", category: "", unitCost: 0, unitPrice: 0, stock: 0 });
+        loadData();
+      } else {
+        const d = await res.json();
+        toast.error(d.error || "添加失败");
+      }
+    } catch {
+      toast.error("网络错误");
+    }
+  };
+
+  // 删除单个 SKU
+  const handleDeleteSku = async (skuId: string) => {
+    if (!confirm("确认删除该 SKU 及其所有销售数据？")) return;
+    try {
+      const res = await fetch(`/api/sku-manage?id=${skuId}`, { method: "DELETE" });
+      if (res.ok) {
+        toast.success("已删除");
+        loadData();
+      } else {
+        toast.error("删除失败");
+      }
+    } catch {
+      toast.error("网络错误");
+    }
+  };
+
+  // 清空所有 SKU
+  const handleClearAll = async () => {
+    if (!confirm("确认清空所有 SKU 数据？此操作不可恢复！")) return;
+    setClearing(true);
+    try {
+      const storeIdParam = storeId !== "all" ? `&storeId=${storeId}` : "";
+      const res = await fetch(`/api/sku-manage?all=true${storeIdParam}`, { method: "DELETE" });
+      if (res.ok) {
+        toast.success("已清空所有 SKU 数据");
+        loadData();
+      } else {
+        toast.error("清空失败");
+      }
+    } catch {
+      toast.error("网络错误");
+    } finally {
+      setClearing(false);
+    }
+  };
 
   const totals = data?.totals || {};
   const rankings = data?.rankings || {};
@@ -106,6 +188,7 @@ export function SkuPage() {
                   <TableHead className="text-right">毛利</TableHead>
                   <TableHead className="text-right">ROI</TableHead>
                   <TableHead className="text-right">退款率</TableHead>
+                  <TableHead className="text-center w-12">操作</TableHead>
                 </TableRow>
               </TableHeader>
               <TableBody>
@@ -124,10 +207,19 @@ export function SkuPage() {
                     <TableCell className="text-right" style={{ color: s.grossProfit >= 0 ? "#34C759" : "#FF3B30" }}>{fmtMoney(s.grossProfit)}</TableCell>
                     <TableCell className="text-right">{s.roi.toFixed(2)}</TableCell>
                     <TableCell className="text-right" style={{ color: s.refundRate > 0.08 ? "#FF3B30" : undefined }}>{fmtPct(s.refundRate)}</TableCell>
+                    <TableCell className="text-center">
+                      <button
+                        onClick={() => handleDeleteSku(s.skuId)}
+                        className="text-muted-foreground hover:text-[#FF3B30] p-1"
+                        title="删除"
+                      >
+                        <Trash2 className="size-3.5" />
+                      </button>
+                    </TableCell>
                   </TableRow>
                 ))}
                 {list.length === 0 && (
-                  <TableRow><TableCell colSpan={8} className="text-center text-muted-foreground py-8">暂无数据</TableCell></TableRow>
+                  <TableRow><TableCell colSpan={9} className="text-center text-muted-foreground py-8">暂无数据</TableCell></TableRow>
                 )}
               </TableBody>
             </Table>
@@ -155,6 +247,65 @@ export function SkuPage() {
             </SelectContent>
           </Select>
           <RefreshButton onClick={loadData} loading={loading} />
+          <Dialog open={showAddDialog} onOpenChange={setShowAddDialog}>
+            <DialogTrigger asChild>
+              <Button size="sm" variant="outline"><Plus className="size-4 mr-1" /> 添加 SKU</Button>
+            </DialogTrigger>
+            <DialogContent>
+              <DialogHeader>
+                <DialogTitle>添加 SKU</DialogTitle>
+              </DialogHeader>
+              <div className="space-y-3">
+                <div className="space-y-1.5">
+                  <Label className="text-xs">所属店铺 *</Label>
+                  <Select value={newSku.storeId} onValueChange={(v) => setNewSku({ ...newSku, storeId: v })}>
+                    <SelectTrigger><SelectValue placeholder="选择店铺" /></SelectTrigger>
+                    <SelectContent>
+                      {stores.map(s => <SelectItem key={s.id} value={s.id}>{s.name}</SelectItem>)}
+                    </SelectContent>
+                  </Select>
+                </div>
+                <div className="grid grid-cols-2 gap-3">
+                  <div className="space-y-1.5">
+                    <Label className="text-xs">SKU 编码 *</Label>
+                    <Input value={newSku.skuCode} onChange={e => setNewSku({ ...newSku, skuCode: e.target.value })} placeholder="SP-001" />
+                  </div>
+                  <div className="space-y-1.5">
+                    <Label className="text-xs">商品名称 *</Label>
+                    <Input value={newSku.skuName} onChange={e => setNewSku({ ...newSku, skuName: e.target.value })} placeholder="商品名称" />
+                  </div>
+                </div>
+                <div className="grid grid-cols-2 gap-3">
+                  <div className="space-y-1.5">
+                    <Label className="text-xs">类目</Label>
+                    <Input value={newSku.category} onChange={e => setNewSku({ ...newSku, category: e.target.value })} placeholder="数码/家居/个护" />
+                  </div>
+                  <div className="space-y-1.5">
+                    <Label className="text-xs">库存</Label>
+                    <Input type="number" value={newSku.stock || ""} onChange={e => setNewSku({ ...newSku, stock: Number(e.target.value) })} placeholder="0" />
+                  </div>
+                </div>
+                <div className="grid grid-cols-2 gap-3">
+                  <div className="space-y-1.5">
+                    <Label className="text-xs">单位成本</Label>
+                    <Input type="number" value={newSku.unitCost || ""} onChange={e => setNewSku({ ...newSku, unitCost: Number(e.target.value) })} placeholder="0.00" />
+                  </div>
+                  <div className="space-y-1.5">
+                    <Label className="text-xs">售价</Label>
+                    <Input type="number" value={newSku.unitPrice || ""} onChange={e => setNewSku({ ...newSku, unitPrice: Number(e.target.value) })} placeholder="0.00" />
+                  </div>
+                </div>
+                <div className="flex justify-end gap-2 pt-2">
+                  <Button variant="outline" onClick={() => setShowAddDialog(false)}>取消</Button>
+                  <Button onClick={handleAddSku}>保存</Button>
+                </div>
+              </div>
+            </DialogContent>
+          </Dialog>
+          <Button size="sm" variant="outline" onClick={handleClearAll} disabled={clearing}>
+            {clearing ? <Loader2 className="size-4 mr-1 animate-spin" /> : <Trash2 className="size-4 mr-1" />}
+            清空数据
+          </Button>
         </div>
       </div>
 

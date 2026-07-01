@@ -4,6 +4,7 @@ import { useState, useRef } from "react";
 import { KpiRow, SectionCard } from "@/components/ecom/kpi";
 import { StoreSelector, useStores } from "@/components/ecom/store-selector";
 import { Button } from "@/components/ui/button";
+import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import {
   Select, SelectContent, SelectItem, SelectTrigger, SelectValue,
@@ -12,11 +13,12 @@ import {
   Table, TableHeader, TableBody, TableHead, TableRow, TableCell,
 } from "@/components/ui/table";
 import {
-  UploadCloud, FileSpreadsheet, Download, CheckCircle2, AlertCircle, Loader2,
+  UploadCloud, FileSpreadsheet, Download, CheckCircle2, AlertCircle, Loader2, Package,
 } from "lucide-react";
 import * as XLSX from "xlsx";
 import { toast } from "sonner";
 import { importManager } from "@/lib/import-task";
+import { Tabs, TabsList, TabsTrigger, TabsContent } from "@/components/ui/tabs";
 
 const TEMPLATE_HEADERS = [
   "日期", "销售额", "订单数", "退款金额", "退款订单数",
@@ -351,6 +353,170 @@ export function DataImportPage() {
           <p>5. 支持的模板：通用模板（推荐）/ 生意参谋 / 直通车 / 万相台 / 财务模板。</p>
         </div>
       </SectionCard>
+
+      {/* 聚水潭 SKU 销量导入 */}
+      <SkuImportSection storeId={storeId} />
     </div>
+  );
+}
+
+// =================== 聚水潭 SKU 导入 ===================
+function SkuImportSection({ storeId }: { storeId: string }) {
+  const [skuFile, setSkuFile] = useState<File | null>(null);
+  const [skuDate, setSkuDate] = useState(new Date().toISOString().slice(0, 10));
+  const [skuPreview, setSkuPreview] = useState<any[]>([]);
+  const [importing, setImporting] = useState(false);
+
+  const handleSkuFile = async (file: File) => {
+    setSkuFile(file);
+    try {
+      const buf = await file.arrayBuffer();
+      const wb = XLSX.read(buf, { type: "array" });
+      const ws = wb.Sheets[wb.SheetNames[0]];
+      const rows = XLSX.utils.sheet_to_json<any>(ws);
+
+      // 聚水潭导出格式字段映射（模糊匹配）
+      const findKey = (row: any, aliases: string[]): string | null => {
+        for (const key of Object.keys(row)) {
+          if (aliases.some(a => key.includes(a))) return key;
+        }
+        return null;
+      };
+
+      const parsed = rows.map(row => {
+        const skuCodeKey = findKey(row, ["SKU", "商品编码", "货号"]);
+        const skuNameKey = findKey(row, ["商品名称", "组合名称", "品名", "名称"]);
+        const qtyKey = findKey(row, ["销售数量", "销量", "数量"]);
+        const salesKey = findKey(row, ["销售金额", "销售额", "金额"]);
+        const refundQtyKey = findKey(row, ["退款数量", "退货数量"]);
+        const refundKey = findKey(row, ["退款金额", "退货金额"]);
+        const stockKey = findKey(row, ["库存", "可用库存"]);
+        const costKey = findKey(row, ["成本", "商品成本"]);
+
+        return {
+          skuCode: skuCodeKey ? String(row[skuCodeKey] || "") : "",
+          skuName: skuNameKey ? String(row[skuNameKey] || "") : "",
+          quantity: qtyKey ? Number(row[qtyKey]) || 0 : 0,
+          salesAmount: salesKey ? Number(row[salesKey]) || 0 : 0,
+          refundQuantity: refundQtyKey ? Number(row[refundQtyKey]) || 0 : 0,
+          refundAmount: refundKey ? Number(row[refundKey]) || 0 : 0,
+          stock: stockKey ? Number(row[stockKey]) || 0 : 0,
+          cost: costKey ? Number(row[costKey]) || 0 : 0,
+        };
+      }).filter(r => r.skuCode && r.skuName);
+
+      setSkuPreview(parsed);
+      toast.success(`解析到 ${parsed.length} 条 SKU 数据`);
+    } catch {
+      toast.error("文件解析失败");
+    }
+  };
+
+  const handleSkuImport = async () => {
+    if (storeId === "all") { toast.error("请先选择店铺"); return; }
+    if (skuPreview.length === 0) { toast.error("无数据"); return; }
+    setImporting(true);
+    try {
+      const res = await fetch("/api/sku-import", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ storeId, date: skuDate, items: skuPreview }),
+      });
+      const data = await res.json();
+      if (res.ok) {
+        toast.success(`SKU 导入完成`, {
+          description: `新增 ${data.created} · 更新 ${data.updated} · 跳过 ${data.skipped}`,
+        });
+        setSkuPreview([]);
+        setSkuFile(null);
+      } else {
+        toast.error(data.error || "导入失败");
+      }
+    } catch {
+      toast.error("网络错误");
+    } finally {
+      setImporting(false);
+    }
+  };
+
+  return (
+    <SectionCard title="聚水潭 SKU 销量导入" subtitle="上传聚水潭导出的 SKU 销量数据">
+      <div className="space-y-4">
+        <div className="flex flex-wrap items-end gap-3">
+          <div className="space-y-1.5">
+            <Label className="text-xs">数据日期</Label>
+            <Input type="date" value={skuDate} onChange={e => setSkuDate(e.target.value)} className="w-[180px]" />
+          </div>
+          <div className="space-y-1.5 flex-1">
+            <Label className="text-xs">选择聚水潭导出的 Excel 文件</Label>
+            <input
+              type="file"
+              accept=".xlsx,.xls,.csv"
+              onChange={e => e.target.files?.[0] && handleSkuFile(e.target.files[0])}
+              className="block w-full text-sm text-muted-foreground
+                file:mr-3 file:py-2 file:px-4 file:rounded-lg
+                file:border-0 file:text-sm file:font-medium
+                file:bg-[#0071E3] file:text-white
+                hover:file:bg-[#0058B0] file:cursor-pointer"
+            />
+          </div>
+          <Button
+            onClick={handleSkuImport}
+            disabled={importing || skuPreview.length === 0 || storeId === "all"}
+          >
+            {importing ? <Loader2 className="size-4 mr-1 animate-spin" /> : <Package className="size-4 mr-1" />}
+            导入 {skuPreview.length > 0 ? `(${skuPreview.length}条)` : ""}
+          </Button>
+        </div>
+
+        {skuFile && (
+          <p className="text-xs text-muted-foreground">已选择：{skuFile.name}</p>
+        )}
+
+        {skuPreview.length > 0 && (
+          <div className="max-h-[300px] overflow-auto rounded-lg border">
+            <Table>
+              <TableHeader>
+                <TableRow>
+                  <TableHead>SKU编码</TableHead>
+                  <TableHead>商品名称</TableHead>
+                  <TableHead className="text-right">销量</TableHead>
+                  <TableHead className="text-right">销售额</TableHead>
+                  <TableHead className="text-right">成本</TableHead>
+                  <TableHead className="text-right">库存</TableHead>
+                </TableRow>
+              </TableHeader>
+              <TableBody>
+                {skuPreview.slice(0, 20).map((s, i) => (
+                  <TableRow key={i}>
+                    <TableCell className="text-xs font-mono">{s.skuCode}</TableCell>
+                    <TableCell>{s.skuName}</TableCell>
+                    <TableCell className="text-right">{s.quantity}</TableCell>
+                    <TableCell className="text-right">¥{s.salesAmount.toLocaleString()}</TableCell>
+                    <TableCell className="text-right">¥{s.cost.toLocaleString()}</TableCell>
+                    <TableCell className="text-right">{s.stock}</TableCell>
+                  </TableRow>
+                ))}
+                {skuPreview.length > 20 && (
+                  <TableRow>
+                    <TableCell colSpan={6} className="text-center text-xs text-muted-foreground">
+                      还有 {skuPreview.length - 20} 条数据...
+                    </TableCell>
+                  </TableRow>
+                )}
+              </TableBody>
+            </Table>
+          </div>
+        )}
+
+        <div className="rounded-lg bg-[#F5F5F7] p-3 text-xs text-muted-foreground space-y-1">
+          <p className="font-medium text-foreground">聚水潭导出格式说明：</p>
+          <p>支持自动识别以下字段（模糊匹配列名）：</p>
+          <p>• SKU编码（商品SKU/商品编码/货号） · 商品名称（组合名称/品名）</p>
+          <p>• 销售数量 · 销售金额 · 退款数量 · 退款金额 · 库存 · 成本</p>
+          <p>导入后自动创建/更新 SKU 并生成当日销售数据。</p>
+        </div>
+      </div>
+    </SectionCard>
   );
 }

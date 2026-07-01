@@ -5,6 +5,8 @@ import { KpiRow, SectionCard } from "@/components/ecom/kpi";
 import { StoreSelector, RefreshButton } from "@/components/ecom/store-selector";
 import { StoreMultiSelect } from "@/components/ecom/store-multi-select";
 import { DateRangePicker, type DateRange } from "@/components/ecom/date-range-picker";
+import { YearTypeSelector } from "@/components/ecom/year-type-selector";
+import { DataDetailTable } from "@/components/ecom/data-detail-table";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { ToggleGroup, ToggleGroupItem } from "@/components/ui/toggle-group";
 import { Card, CardContent } from "@/components/ui/card";
@@ -93,10 +95,13 @@ export function AnalyticsPage() {
                 </ResponsiveContainer>
               </div>
             </SectionCard>
+
+            {/* 数据明细表格 - 支持最近5年 */}
+            <SectionCard title="数据明细" subtitle="每日经营数据明细 · 支持自然年/季节年切换 · 可查看最近5年">
+              <DataDetailTable />
+            </SectionCard>
           </div>
         </TabsContent>
-
-        {/* 周分析 */}
         <TabsContent value="weekly">
           <div className="space-y-4">
             <KpiRow cards={[
@@ -163,10 +168,11 @@ export function AnalyticsPage() {
 
 function YearAnalysis({ data }: { data: any }) {
   const [yearType, setYearType] = useState<"natural" | "seasonal">("natural");
+  const [year, setYear] = useState(new Date().getFullYear());
 
   const yearSummary = yearType === "seasonal" ? data?.seasonalYear : data?.naturalYear;
   const cumulative = yearType === "seasonal" ? data?.seasonalCumulative : data?.naturalCumulative;
-  const yearLabel = yearType === "seasonal" ? "季节年（7/1 - 次年 6/30）" : "自然年（1/1 - 12/31）";
+  const yearLabel = yearType === "seasonal" ? `季节年 ${year}（7/1 - 次年 6/30）` : `自然年 ${year}（1/1 - 12/31）`;
 
   const fmtMoney = (v: number) => `¥${(v || 0).toLocaleString(undefined, { maximumFractionDigits: 0 })}`;
   const fmtPct = (v: number) => `${(v * 100).toFixed(2)}%`;
@@ -175,12 +181,9 @@ function YearAnalysis({ data }: { data: any }) {
     <div className="space-y-4">
       <SectionCard
         title={`${yearLabel}概览`}
-        subtitle="可切换自然年 / 季节年"
+        subtitle="可切换自然年 / 季节年，支持最近5年"
         action={
-          <ToggleGroup type="single" value={yearType} onValueChange={(v) => v && setYearType(v as "natural" | "seasonal")}>
-            <ToggleGroupItem value="natural" className="text-xs">自然年</ToggleGroupItem>
-            <ToggleGroupItem value="seasonal" className="text-xs">季节年</ToggleGroupItem>
-          </ToggleGroup>
+          <YearTypeSelector yearType={yearType} setYearType={setYearType} year={year} setYear={setYear} />
         }
       >
         <KpiRow cards={[

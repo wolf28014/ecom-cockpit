@@ -15,6 +15,7 @@ export async function GET(req: NextRequest) {
   const storeIdsParam = req.nextUrl.searchParams.get("storeIds");
   const singleStoreId = req.nextUrl.searchParams.get("storeId");
   const yearType = (req.nextUrl.searchParams.get("yearType") || "natural") as "natural" | "seasonal";
+  const selectedYear = parseInt(req.nextUrl.searchParams.get("year") || "0");
 
   // 解析店铺筛选（必须在用户店铺范围内）
   let storeIds: string[];
@@ -23,7 +24,6 @@ export async function GET(req: NextRequest) {
   } else if (singleStoreId && userStoreIds.includes(singleStoreId)) {
     storeIds = [singleStoreId];
   } else {
-    // 不传 = 查询用户所有店铺
     storeIds = userStoreIds;
   }
 
@@ -34,16 +34,26 @@ export async function GET(req: NextRequest) {
   const today = new Date();
   today.setHours(23, 59, 59, 999);
 
+  const queryYear = selectedYear > 0 ? selectedYear : today.getFullYear();
+  const isCurrentYear = queryYear === today.getFullYear();
+
   // 根据年类型确定起止日期
   let startDate: Date;
+  let endDate: Date;
   if (yearType === "seasonal") {
     // 季节年：7/1 - 次年 6/30
-    const m = today.getMonth() + 1;
-    const seasonYear = m >= 7 ? today.getFullYear() : today.getFullYear() - 1;
-    startDate = new Date(seasonYear, 6, 1); // 7月1日
+    startDate = new Date(queryYear, 6, 1); // 7月1日
+    endDate = new Date(queryYear + 1, 5, 30); // 次年6月30日
+    if (isCurrentYear) {
+      endDate = today; // 当前年只到今天
+    }
   } else {
     // 自然年：1/1 - 12/31
-    startDate = new Date(today.getFullYear(), 0, 1);
+    startDate = new Date(queryYear, 0, 1);
+    endDate = new Date(queryYear, 11, 31);
+    if (isCurrentYear) {
+      endDate = today;
+    }
   }
   startDate.setHours(0, 0, 0, 0);
 
@@ -51,7 +61,7 @@ export async function GET(req: NextRequest) {
   const records = await db.dailyRecord.findMany({
     where: {
       storeId: { in: storeIds },
-      recordDate: { gte: startDate, lte: today },
+      recordDate: { gte: startDate, lte: endDate },
     },
     orderBy: { recordDate: "asc" },
   });
@@ -59,7 +69,7 @@ export async function GET(req: NextRequest) {
   // 查询去年同期数据（用于计算同比）
   const lastYearStart = new Date(startDate);
   lastYearStart.setFullYear(lastYearStart.getFullYear() - 1);
-  const lastYearEnd = new Date(today);
+  const lastYearEnd = new Date(endDate);
   lastYearEnd.setFullYear(lastYearEnd.getFullYear() - 1);
 
   const lastYearRecords = await db.dailyRecord.findMany({

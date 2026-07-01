@@ -44,16 +44,14 @@ export function DataEntryPage() {
     <div className="space-y-6">
       <div>
         <h1 className="text-2xl font-bold tracking-tight">数据录入</h1>
-        <p className="text-sm text-muted-foreground mt-1">每日数据 + 月度成本 + 数据明细</p>
+        <p className="text-sm text-muted-foreground mt-1">每日数据 + 月度成本</p>
       </div>
       <Tabs defaultValue="daily">
         <TabsList>
           <TabsTrigger value="daily">每日数据录入</TabsTrigger>
-          <TabsTrigger value="detail">数据明细</TabsTrigger>
           <TabsTrigger value="monthly">月度成本录入</TabsTrigger>
         </TabsList>
         <TabsContent value="daily"><DailyTab /></TabsContent>
-        <TabsContent value="detail"><DetailTab /></TabsContent>
         <TabsContent value="monthly"><MonthlyTab /></TabsContent>
       </Tabs>
     </div>
