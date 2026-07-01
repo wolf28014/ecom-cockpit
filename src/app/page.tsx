@@ -3,7 +3,7 @@
 import { useState, useEffect } from "react";
 import {
   LayoutDashboard, Store, PencilLine, UploadCloud, BarChart3, Bot,
-  Target, Wallet, Package, FileText, Settings, Database, Bell, TrendingUp,
+  Target, Wallet, Package, FileText, Settings, Database, Bell, TrendingUp, LogOut,
 } from "lucide-react";
 import { cn } from "@/lib/utils";
 import { Badge } from "@/components/ui/badge";
@@ -11,6 +11,8 @@ import {
   Dialog, DialogContent, DialogHeader, DialogTitle, DialogDescription,
 } from "@/components/ui/dialog";
 import { Button } from "@/components/ui/button";
+import { LoginPage } from "@/components/ecom/login-page";
+import { clearCacheByPrefix } from "@/lib/cache";
 
 import { DashboardPage } from "@/components/ecom/pages/dashboard";
 import { StoresPage } from "@/components/ecom/pages/stores";
@@ -78,6 +80,72 @@ const PAGE_TITLES: Record<PageKey, { title: string; subtitle: string }> = {
 export default function Home() {
   const [activePage, setActivePage] = useState<PageKey>("dashboard");
   const [unreadAlerts, setUnreadAlerts] = useState(0);
+  const [user, setUser] = useState<any>(null);
+  const [authLoading, setAuthLoading] = useState(true);
+
+  // 检查登录状态
+  useEffect(() => {
+    fetch("/api/auth/me")
+      .then(r => r.json())
+      .then(d => {
+        if (d.user) {
+          setUser(d.user);
+        }
+        setAuthLoading(false);
+      })
+      .catch(() => setAuthLoading(false));
+  }, []);
+
+  const handleLogout = async () => {
+    await fetch("/api/auth/logout", { method: "POST" });
+    setUser(null);
+    clearCacheByPrefix("ecom:");
+    location.reload();
+  };
+
+  const handleLoginSuccess = () => {
+    fetch("/api/auth/me")
+      .then(r => r.json())
+      .then(d => {
+        if (d.user) {
+          setUser(d.user);
+          clearCacheByPrefix("ecom:");
+        }
+      });
+  };
+
+  // 加载中
+  if (authLoading) {
+    return (
+      <div className="min-h-screen flex items-center justify-center bg-[#F5F5F7]">
+        <div className="text-center">
+          <div className="size-12 mx-auto mb-3 rounded-2xl bg-gradient-to-br from-[#0071E3] to-[#34C759] flex items-center justify-center text-white text-xl font-bold animate-pulse">
+            📊
+          </div>
+          <p className="text-sm text-muted-foreground">加载中...</p>
+        </div>
+      </div>
+    );
+  }
+
+  // 未登录：显示登录页
+  if (!user) {
+    return <LoginPage onLoginSuccess={handleLoginSuccess} />;
+  }
+
+  return <AppContent user={user} onLogout={handleLogout} activePage={activePage} setActivePage={setActivePage} unreadAlerts={unreadAlerts} setUnreadAlerts={setUnreadAlerts} />;
+}
+
+function AppContent({
+  user, onLogout, activePage, setActivePage, unreadAlerts, setUnreadAlerts,
+}: {
+  user: any;
+  onLogout: () => void;
+  activePage: PageKey;
+  setActivePage: (p: PageKey) => void;
+  unreadAlerts: number;
+  setUnreadAlerts: (n: number) => void;
+}) {
   const [showAlerts, setShowAlerts] = useState(false);
   const [alertsList, setAlertsList] = useState<any[]>([]);
 
@@ -154,6 +222,23 @@ export default function Home() {
               <h1 className="text-sm font-bold text-[#1D1D1F] leading-tight">电商驾驶舱</h1>
               <p className="text-[10px] text-muted-foreground leading-tight">Pro · v1.0</p>
             </div>
+          </div>
+          {/* 用户信息 */}
+          <div className="mt-3 flex items-center gap-2 px-2 py-1.5 rounded-lg bg-[#F5F5F7]">
+            <div className="size-6 rounded-full bg-[#0071E3] flex items-center justify-center text-white text-xs font-bold">
+              {user.email?.[0]?.toUpperCase() || "U"}
+            </div>
+            <div className="flex-1 min-w-0">
+              <p className="text-xs font-medium truncate">{user.name || user.email}</p>
+              <p className="text-[10px] text-muted-foreground truncate">{user.email}</p>
+            </div>
+            <button
+              onClick={onLogout}
+              className="text-muted-foreground hover:text-[#FF3B30] p-1"
+              title="退出登录"
+            >
+              <LogOut className="size-3.5" />
+            </button>
           </div>
         </div>
 

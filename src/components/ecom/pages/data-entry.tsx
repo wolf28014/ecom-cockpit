@@ -3,6 +3,7 @@
 import { useState, useEffect } from "react";
 import { KpiRow, SectionCard } from "@/components/ecom/kpi";
 import { StoreSelector, RefreshButton, useStores } from "@/components/ecom/store-selector";
+import { StoreMultiSelect } from "@/components/ecom/store-multi-select";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { Card, CardContent } from "@/components/ui/card";
 import { Input } from "@/components/ui/input";
@@ -133,12 +134,12 @@ function DailyTab() {
   const fmt = (v: number) => `¥${v.toLocaleString(undefined, { maximumFractionDigits: 2 })}`;
   const fmtPct = (v: number) => `${(v * 100).toFixed(2)}%`;
 
-  const handleSave = async () => {
+  const handleSave = async (silent = false) => {
     if (!storeId) {
-      toast.error("请先选择店铺");
+      if (!silent) toast.error("请先选择店铺");
       return;
     }
-    setSaving(true);
+    if (!silent) setSaving(true);
     try {
       const res = await fetch("/api/data-entry", {
         method: "POST",
@@ -151,17 +152,36 @@ function DailyTab() {
         }),
       });
       if (res.ok) {
-        toast.success("保存成功", {
-          description: `净销售额 ${fmt(netSales)} · 投产比 ${roi.toFixed(2)}`,
-        });
+        if (silent) {
+          // 静默自动保存：右下角轻提示
+          toast.success("已自动保存", {
+            description: `净销售额 ${fmt(netSales)}`,
+            duration: 2000,
+          });
+        } else {
+          toast.success("保存成功", {
+            description: `净销售额 ${fmt(netSales)} · 投产比 ${roi.toFixed(2)}`,
+          });
+        }
+        // 清除 dashboard 缓存，让首页下次加载新数据
+        try {
+          localStorage.removeItem("ecom:dashboard:all");
+          localStorage.removeItem(`ecom:dashboard:${storeId}`);
+        } catch {}
       } else {
-        toast.error("保存失败");
+        if (!silent) toast.error("保存失败");
       }
     } catch (e) {
-      toast.error("保存失败");
+      if (!silent) toast.error("保存失败");
     } finally {
-      setSaving(false);
+      if (!silent) setSaving(false);
     }
+  };
+
+  // 失焦自动保存（静默模式）
+  const handleBlur = () => {
+    if (!storeId) return;
+    handleSave(true);
   };
 
   return (
@@ -193,19 +213,19 @@ function DailyTab() {
           <div className="space-y-3">
             <div>
               <Label className="text-xs">销售额</Label>
-              <Input type="number" value={sales || ""} onChange={(e) => setSales(Number(e.target.value))} placeholder="0.00" />
+              <Input type="number" value={sales || ""} onChange={(e) => setSales(Number(e.target.value))} onBlur={handleBlur} placeholder="0.00" />
             </div>
             <div>
               <Label className="text-xs">订单数</Label>
-              <Input type="number" value={orders || ""} onChange={(e) => setOrders(Number(e.target.value))} placeholder="0" />
+              <Input type="number" value={orders || ""} onChange={(e) => setOrders(Number(e.target.value))} onBlur={handleBlur} placeholder="0" />
             </div>
             <div>
               <Label className="text-xs">退款金额</Label>
-              <Input type="number" value={refund || ""} onChange={(e) => setRefund(Number(e.target.value))} placeholder="0.00" />
+              <Input type="number" value={refund || ""} onChange={(e) => setRefund(Number(e.target.value))} onBlur={handleBlur} placeholder="0.00" />
             </div>
             <div>
               <Label className="text-xs">访客数</Label>
-              <Input type="number" value={visitors || ""} onChange={(e) => setVisitors(Number(e.target.value))} placeholder="0" />
+              <Input type="number" value={visitors || ""} onChange={(e) => setVisitors(Number(e.target.value))} onBlur={handleBlur} placeholder="0" />
             </div>
           </div>
         </SectionCard>
@@ -229,6 +249,7 @@ function DailyTab() {
                   type="number"
                   value={promo[f] || ""}
                   onChange={(e) => setPromo({ ...promo, [f]: Number(e.target.value) })}
+                  onBlur={handleBlur}
                   placeholder="0.00"
                 />
               </div>
@@ -239,6 +260,7 @@ function DailyTab() {
                 type="number"
                 value={promoManualTotal}
                 onChange={(e) => setPromoManualTotal(e.target.value)}
+                onBlur={handleBlur}
                 placeholder="留空则用自动汇总"
                 className="border-[#0071E3]"
               />
@@ -404,28 +426,21 @@ function MonthlyTab() {
 
 // =================== 数据明细表格（生意参谋风格） ===================
 function DetailTab() {
-  const { stores } = useStores();
-  const [storeId, setStoreId] = useState<string>("");
+  const [storeIds, setStoreIds] = useState<string[]>([]);
   const [yearType, setYearType] = useState<"natural" | "seasonal">("natural");
   const [data, setData] = useState<any>(null);
   const [loading, setLoading] = useState(false);
 
   useEffect(() => {
-    if (!storeId && stores.length > 0) {
-      // eslint-disable-next-line react-hooks/set-state-in-effect
-      setStoreId(stores[0].id);
-    }
-  }, [stores, storeId]);
-
-  useEffect(() => {
-    if (!storeId) return;
+    // storeIds 为空数组表示全店铺，直接加载
     // eslint-disable-next-line react-hooks/set-state-in-effect
     setLoading(true);
-    fetch(`/api/daily-detail?storeId=${storeId}&yearType=${yearType}`)
+    const sidParam = storeIds.length > 0 ? `&storeIds=${storeIds.join(",")}` : "";
+    fetch(`/api/daily-detail?yearType=${yearType}${sidParam}`)
       .then(r => r.json())
       .then(d => { setData(d); setLoading(false); })
       .catch(() => setLoading(false));
-  }, [storeId, yearType]);
+  }, [storeIds, yearType]);
 
   const rows: any[] = data?.rows || [];
   const summary: any = data?.summary || {};
@@ -447,8 +462,8 @@ function DetailTab() {
       <Card>
         <CardContent className="p-4 flex flex-wrap items-end gap-4">
           <div className="space-y-1.5">
-            <Label className="text-xs">选择店铺</Label>
-            <StoreSelector value={storeId || "all"} onChange={(v) => setStoreId(v === "all" ? "" : v)} allowAll={false} />
+            <Label className="text-xs">选择店铺（可多选汇总）</Label>
+            <StoreMultiSelect value={storeIds} onChange={setStoreIds} />
           </div>
           <div className="space-y-1.5">
             <Label className="text-xs">统计周期</Label>
@@ -465,14 +480,14 @@ function DetailTab() {
         </CardContent>
       </Card>
 
-      {/* 数据表格 - 生意参谋风格横向滚动 */}
+      {/* 数据表格 - 生意参谋风格，横纵向均可滚动 */}
       <Card>
         <CardContent className="p-0">
-          <div className="overflow-x-auto">
+          <div className="overflow-auto" style={{ maxHeight: "70vh" }}>
             <table className="w-full text-sm border-collapse">
-              <thead>
+              <thead className="sticky top-0 z-20">
                 <tr className="bg-[#0071E3] text-white">
-                  <th className="sticky left-0 z-10 bg-[#0071E3] px-3 py-2.5 text-left font-semibold whitespace-nowrap border-r border-white/20">日期</th>
+                  <th className="sticky left-0 top-0 z-30 bg-[#0071E3] px-3 py-2.5 text-left font-semibold whitespace-nowrap border-r border-white/20">日期</th>
                   <th className="px-3 py-2.5 text-right font-semibold whitespace-nowrap">销售额</th>
                   <th className="px-3 py-2.5 text-right font-semibold whitespace-nowrap">订单量</th>
                   <th className="px-3 py-2.5 text-right font-semibold whitespace-nowrap">退款金额</th>
@@ -529,9 +544,9 @@ function DetailTab() {
                 ))}
               </tbody>
               {rows.length > 0 && (
-                <tfoot>
+                <tfoot className="sticky bottom-0 z-20">
                   <tr className="bg-[#1D1D1F] text-white font-semibold" style={{ height: "40px" }}>
-                    <td className="sticky left-0 z-10 bg-[#1D1D1F] px-3 py-2 text-left border-r border-white/20">汇总</td>
+                    <td className="sticky left-0 bottom-0 z-30 bg-[#1D1D1F] px-3 py-2 text-left border-r border-white/20">汇总</td>
                     <td className="px-3 py-2 text-right">{fmtMoney(summary.sales)}</td>
                     <td className="px-3 py-2 text-right">{summary.orders}</td>
                     <td className="px-3 py-2 text-right text-[#FF9500]">{fmtMoney(summary.refund)}</td>

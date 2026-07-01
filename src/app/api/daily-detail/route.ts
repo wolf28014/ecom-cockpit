@@ -1,27 +1,35 @@
 import { NextRequest, NextResponse } from "next/server";
 import { db } from "@/lib/db";
+import { getCurrentUserStoreIds } from "@/lib/auth";
 
 /**
  * 每日数据明细 + 自动计算累积指标
  * 返回生意参谋风格的数据表格
- *
- * 计算字段：
- * - 累积销售额/累积退款/累积推广费：从周期第一天累加
- * - 净销售额 = 销售 - 退款
- * - 退款率 = 退款 / 销售
- * - 推广占比 = 推广 / 销售
- * - 累积推广占比 = 累积推广 / 累积销售
- * - 累积净销售额 = 累积销售 - 累积退款
- * - 累积净推广费率 = 累积推广 / 累积净销售
- * - 投产比 = 销售 / 推广
- * - 同比去年 = (今年销售 - 去年同期销售) / 去年同期销售
  */
 export async function GET(req: NextRequest) {
-  const storeId = req.nextUrl.searchParams.get("storeId");
-  const yearType = (req.nextUrl.searchParams.get("yearType") || "natural") as "natural" | "seasonal";
-  const days = parseInt(req.nextUrl.searchParams.get("days") || "90");
+  const userStoreIds = await getCurrentUserStoreIds();
+  if (!userStoreIds) {
+    return NextResponse.json({ error: "未登录" }, { status: 401 });
+  }
 
-  if (!storeId) return NextResponse.json({ error: "Missing storeId" }, { status: 400 });
+  const storeIdsParam = req.nextUrl.searchParams.get("storeIds");
+  const singleStoreId = req.nextUrl.searchParams.get("storeId");
+  const yearType = (req.nextUrl.searchParams.get("yearType") || "natural") as "natural" | "seasonal";
+
+  // 解析店铺筛选（必须在用户店铺范围内）
+  let storeIds: string[];
+  if (storeIdsParam) {
+    storeIds = storeIdsParam.split(",").filter(Boolean).filter(id => userStoreIds.includes(id));
+  } else if (singleStoreId && userStoreIds.includes(singleStoreId)) {
+    storeIds = [singleStoreId];
+  } else {
+    // 不传 = 查询用户所有店铺
+    storeIds = userStoreIds;
+  }
+
+  if (storeIds.length === 0) {
+    return NextResponse.json({ rows: [], summary: {}, totalDays: 0, startDate: "", endDate: "" });
+  }
 
   const today = new Date();
   today.setHours(23, 59, 59, 999);
@@ -39,10 +47,10 @@ export async function GET(req: NextRequest) {
   }
   startDate.setHours(0, 0, 0, 0);
 
-  // 查询今年数据
+  // 查询今年数据（多店铺汇总）
   const records = await db.dailyRecord.findMany({
     where: {
-      storeId,
+      storeId: { in: storeIds },
       recordDate: { gte: startDate, lte: today },
     },
     orderBy: { recordDate: "asc" },
@@ -56,7 +64,7 @@ export async function GET(req: NextRequest) {
 
   const lastYearRecords = await db.dailyRecord.findMany({
     where: {
-      storeId,
+      storeId: { in: storeIds },
       recordDate: { gte: lastYearStart, lte: lastYearEnd },
     },
     orderBy: { recordDate: "asc" },
@@ -69,39 +77,58 @@ export async function GET(req: NextRequest) {
     lastYearMap.set(key, r.salesAmount);
   }
 
+  // 多店铺场景：按日期聚合（同一天多个店铺数据相加）
+  const dailyMap = new Map<string, { sales: number; orders: number; refund: number; promotion: number; visitors: number }>();
+  for (const r of records) {
+    const key = r.recordDate.toISOString().slice(0, 10);
+    if (!dailyMap.has(key)) {
+      dailyMap.set(key, { sales: 0, orders: 0, refund: 0, promotion: 0, visitors: 0 });
+    }
+    const d = dailyMap.get(key)!;
+    d.sales += r.salesAmount;
+    d.orders += r.orderCount;
+    d.refund += r.refundAmount;
+    d.promotion += (r.promotionManualTotal ?? r.promotionTotal);
+    d.visitors += r.visitors;
+  }
+
+  // 按日期排序
+  const sortedDates = Array.from(dailyMap.keys()).sort();
+
   // 计算累积指标
   let cumSales = 0;
   let cumRefund = 0;
   let cumPromotion = 0;
 
-  const rows = records.map((r) => {
-    const promotion = r.promotionManualTotal ?? r.promotionTotal;
-    cumSales += r.salesAmount;
-    cumRefund += r.refundAmount;
-    cumPromotion += promotion;
+  const rows = sortedDates.map((date) => {
+    const d = dailyMap.get(date)!;
+    cumSales += d.sales;
+    cumRefund += d.refund;
+    cumPromotion += d.promotion;
 
-    const netSales = r.salesAmount - r.refundAmount;
-    const refundRate = r.salesAmount > 0 ? r.refundAmount / r.salesAmount : 0;
-    const promotionRate = r.salesAmount > 0 ? promotion / r.salesAmount : 0;
-    const roi = promotion > 0 ? r.salesAmount / promotion : 0;
+    const netSales = d.sales - d.refund;
+    const refundRate = d.sales > 0 ? d.refund / d.sales : 0;
+    const promotionRate = d.sales > 0 ? d.promotion / d.sales : 0;
+    const roi = d.promotion > 0 ? d.sales / d.promotion : 0;
 
     const cumNetSales = cumSales - cumRefund;
     const cumPromotionRate = cumSales > 0 ? cumPromotion / cumSales : 0;
     const cumNetPromotionRate = cumNetSales > 0 ? cumPromotion / cumNetSales : 0;
 
     // 同比去年
-    const dateKey = `${r.recordDate.getMonth() + 1}-${r.recordDate.getDate()}`;
+    const dateObj = new Date(date);
+    const dateKey = `${dateObj.getMonth() + 1}-${dateObj.getDate()}`;
     const lastYearSales = lastYearMap.get(dateKey) || 0;
-    const yoyGrowth = lastYearSales > 0 ? (r.salesAmount - lastYearSales) / lastYearSales : null;
+    const yoyGrowth = lastYearSales > 0 ? (d.sales - lastYearSales) / lastYearSales : null;
 
     return {
-      date: r.recordDate.toISOString().slice(0, 10),
+      date,
       // 原始数据
-      sales: Math.round(r.salesAmount * 100) / 100,
-      orders: r.orderCount,
-      refund: Math.round(r.refundAmount * 100) / 100,
-      promotion: Math.round(promotion * 100) / 100,
-      visitors: r.visitors,
+      sales: Math.round(d.sales * 100) / 100,
+      orders: d.orders,
+      refund: Math.round(d.refund * 100) / 100,
+      promotion: Math.round(d.promotion * 100) / 100,
+      visitors: d.visitors,
       // 累积
       cumSales: Math.round(cumSales * 100) / 100,
       cumRefund: Math.round(cumRefund * 100) / 100,

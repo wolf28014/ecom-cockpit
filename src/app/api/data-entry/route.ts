@@ -1,14 +1,24 @@
 import { NextRequest, NextResponse } from "next/server";
 import { db } from "@/lib/db";
 import { PROMOTION_FIELDS } from "@/lib/analytics";
+import { getCurrentUser, getCurrentUserStoreIds } from "@/lib/auth";
 
 // GET: 查询指定店铺某日数据；或最近 N 天列表
 export async function GET(req: NextRequest) {
+  const userStoreIds = await getCurrentUserStoreIds();
+  if (!userStoreIds) {
+    return NextResponse.json({ error: "未登录" }, { status: 401 });
+  }
+
   const storeId = req.nextUrl.searchParams.get("storeId");
   const date = req.nextUrl.searchParams.get("date");
   const days = parseInt(req.nextUrl.searchParams.get("days") || "30");
 
   if (!storeId) return NextResponse.json({ error: "Missing storeId" }, { status: 400 });
+  // 校验店铺归属
+  if (!userStoreIds.includes(storeId)) {
+    return NextResponse.json({ error: "无权限访问该店铺" }, { status: 403 });
+  }
 
   if (date) {
     const targetDate = new Date(date);
@@ -43,6 +53,11 @@ export async function GET(req: NextRequest) {
 
 // POST: 保存（新增或更新）每日数据
 export async function POST(req: NextRequest) {
+  const userStoreIds = await getCurrentUserStoreIds();
+  if (!userStoreIds) {
+    return NextResponse.json({ error: "未登录" }, { status: 401 });
+  }
+
   const body = await req.json();
   const {
     storeId, recordDate,
@@ -52,6 +67,10 @@ export async function POST(req: NextRequest) {
 
   if (!storeId || !recordDate) {
     return NextResponse.json({ error: "Missing storeId or recordDate" }, { status: 400 });
+  }
+  // 校验店铺归属
+  if (!userStoreIds.includes(storeId)) {
+    return NextResponse.json({ error: "无权限操作该店铺" }, { status: 403 });
   }
 
   const date = new Date(recordDate);

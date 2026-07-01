@@ -105,6 +105,22 @@ export interface MonthlyCostData {
   note?: string | null;
 }
 
+// ============== 店铺筛选类型 ==============
+// string: 单店铺; string[]: 多店铺汇总; undefined: 全店铺
+export type StoreFilter = string | string[] | undefined;
+
+// 把 StoreFilter 转换为 Prisma where 子句
+function applyStoreFilter(where: any, storeFilter: StoreFilter, field = "storeId"): any {
+  if (!storeFilter) return where;
+  if (typeof storeFilter === "string") {
+    return { ...where, [field]: storeFilter };
+  }
+  if (Array.isArray(storeFilter) && storeFilter.length > 0) {
+    return { ...where, [field]: { in: storeFilter } };
+  }
+  return where;
+}
+
 // ============== 季节年工具 ==============
 export function getSeasonalYearRange(date: Date): { start: Date; end: Date; year: number } {
   const y = date.getFullYear();
@@ -130,52 +146,51 @@ export function getNaturalYearRange(date: Date): { start: Date; end: Date; year:
 // ============== 主服务 ==============
 export class AnalyticsService {
   // ---------- 今日/本周/本月 ----------
-  static async getTodaySummary(storeId?: string): Promise<PeriodSummary> {
+  static async getTodaySummary(storeFilter?: StoreFilter): Promise<PeriodSummary> {
     const today = new Date();
     today.setHours(0, 0, 0, 0);
-    return this.getPeriodSummary(today, today, "today", storeId);
+    return this.getPeriodSummary(today, today, "today", storeFilter);
   }
 
-  static async getWeekSummary(storeId?: string): Promise<PeriodSummary> {
+  static async getWeekSummary(storeFilter?: StoreFilter): Promise<PeriodSummary> {
     const today = new Date();
     today.setHours(0, 0, 0, 0);
     const monday = new Date(today);
     monday.setDate(monday.getDate() - today.getDay());
-    return this.getPeriodSummary(monday, today, "week", storeId);
+    return this.getPeriodSummary(monday, today, "week", storeFilter);
   }
 
-  static async getMonthSummary(storeId?: string): Promise<PeriodSummary> {
+  static async getMonthSummary(storeFilter?: StoreFilter): Promise<PeriodSummary> {
     const today = new Date();
     today.setHours(0, 0, 0, 0);
     const firstDay = new Date(today.getFullYear(), today.getMonth(), 1);
-    return this.getPeriodSummary(firstDay, today, "month", storeId);
+    return this.getPeriodSummary(firstDay, today, "month", storeFilter);
   }
 
   // 自然年
-  static async getNaturalYearSummary(storeId?: string): Promise<PeriodSummary> {
+  static async getNaturalYearSummary(storeFilter?: StoreFilter): Promise<PeriodSummary> {
     const today = new Date();
     const { start, end, year } = getNaturalYearRange(today);
-    const s = await this.getPeriodSummary(start, end, "year", storeId);
+    const s = await this.getPeriodSummary(start, end, "year", storeFilter);
     return { ...s, yearType: "natural" };
   }
 
   // 季节年
-  static async getSeasonalYearSummary(storeId?: string): Promise<PeriodSummary> {
+  static async getSeasonalYearSummary(storeFilter?: StoreFilter): Promise<PeriodSummary> {
     const today = new Date();
     const { start, end, year } = getSeasonalYearRange(today);
-    const s = await this.getPeriodSummary(start, end, "year", storeId);
+    const s = await this.getPeriodSummary(start, end, "year", storeFilter);
     return { ...s, yearType: "seasonal" };
   }
 
-  static async getCustomSummary(start: Date, end: Date, storeId?: string): Promise<PeriodSummary> {
-    return this.getPeriodSummary(start, end, "custom", storeId);
+  static async getCustomSummary(start: Date, end: Date, storeFilter?: StoreFilter): Promise<PeriodSummary> {
+    return this.getPeriodSummary(start, end, "custom", storeFilter);
   }
 
-  static async getPeriodSummary(start: Date, end: Date, period: string, storeId?: string): Promise<PeriodSummary> {
-    const where: Prisma.DailyRecordWhereInput = {
+  static async getPeriodSummary(start: Date, end: Date, period: string, storeFilter?: StoreFilter): Promise<PeriodSummary> {
+    const where: Prisma.DailyRecordWhereInput = applyStoreFilter({
       recordDate: { gte: start, lte: end },
-    };
-    if (storeId) where.storeId = storeId;
+    }, storeFilter);
 
     const records = await db.dailyRecord.findMany({ where });
 
@@ -220,14 +235,14 @@ export class AnalyticsService {
   }
 
   // ---------- 累积指标（年度） ----------
-  static async getCumulativeStats(storeId?: string, yearType: "natural" | "seasonal" = "natural"): Promise<CumulativeStats> {
+  static async getCumulativeStats(storeFilter?: StoreFilter, yearType: "natural" | "seasonal" = "natural"): Promise<CumulativeStats> {
     const today = new Date();
     today.setHours(23, 59, 59, 999);
 
     const currentRange = yearType === "seasonal" ? getSeasonalYearRange(today) : getNaturalYearRange(today);
 
     // 今年累计
-    const thisYearSummary = await this.getPeriodSummary(currentRange.start, today, "cumulative", storeId);
+    const thisYearSummary = await this.getPeriodSummary(currentRange.start, today, "cumulative", storeFilter);
 
     // 去年同期
     const daysPassed = Math.floor((today.getTime() - currentRange.start.getTime()) / (24 * 60 * 60 * 1000));
@@ -235,7 +250,7 @@ export class AnalyticsService {
     lastStart.setFullYear(lastStart.getFullYear() - 1);
     const lastEnd = new Date(lastStart);
     lastEnd.setDate(lastEnd.getDate() + daysPassed);
-    const lastYearSummary = await this.getPeriodSummary(lastStart, lastEnd, "last_year", storeId);
+    const lastYearSummary = await this.getPeriodSummary(lastStart, lastEnd, "last_year", storeFilter);
 
     const yoyGrowth = lastYearSummary.salesAmount > 0
       ? (thisYearSummary.salesAmount - lastYearSummary.salesAmount) / lastYearSummary.salesAmount : 0;
@@ -257,16 +272,15 @@ export class AnalyticsService {
   }
 
   // ---------- 趋势 ----------
-  static async getTrend(days: number, storeId?: string): Promise<TrendPoint[]> {
+  static async getTrend(days: number, storeFilter?: StoreFilter): Promise<TrendPoint[]> {
     const end = new Date();
     end.setHours(0, 0, 0, 0);
     const start = new Date(end);
     start.setDate(start.getDate() - (days - 1));
 
-    const where: Prisma.DailyRecordWhereInput = {
+    const where: Prisma.DailyRecordWhereInput = applyStoreFilter({
       recordDate: { gte: start, lte: end },
-    };
-    if (storeId) where.storeId = storeId;
+    }, storeFilter);
 
     const records = await db.dailyRecord.findMany({
       where,
@@ -312,16 +326,15 @@ export class AnalyticsService {
   }
 
   // ---------- SKU 统计 ----------
-  static async getSkuStats(days: number, storeId?: string): Promise<SkuStat[]> {
+  static async getSkuStats(days: number, storeFilter?: StoreFilter): Promise<SkuStat[]> {
     const end = new Date();
     end.setHours(0, 0, 0, 0);
     const start = new Date(end);
     start.setDate(start.getDate() - (days - 1));
 
-    const where: Prisma.DailySkuWhereInput = {
+    const where: Prisma.DailySkuWhereInput = applyStoreFilter({
       recordDate: { gte: start, lte: end },
-    };
-    if (storeId) where.storeId = storeId;
+    }, storeFilter);
 
     const dailySkus = await db.dailySku.findMany({
       where,
@@ -398,21 +411,25 @@ export class AnalyticsService {
   }
 
   // ---------- 利润目标进度 ----------
-  static async getProfitTargetProgress(storeId?: string) {
+  // 多店铺场景下，利润目标按"第一个店铺"或"无店铺"查找
+  static async getProfitTargetProgress(storeFilter?: StoreFilter) {
     const today = new Date();
     const year = today.getFullYear();
     const month = today.getMonth() + 1;
     const quarter = Math.floor((month - 1) / 3) + 1;
 
+    // 单店铺时按 storeId 查目标；多店铺或全店铺时只查 storeId 为 null 的全局目标
+    const targetStoreId = typeof storeFilter === "string" ? storeFilter : undefined;
+
     const result: Record<string, any> = {};
 
     const yearlyTarget = await db.profitTarget.findFirst({
-      where: storeId
-        ? { targetType: "yearly", targetYear: year, storeId }
-        : { targetType: "yearly", targetYear: year },
+      where: targetStoreId
+        ? { targetType: "yearly", targetYear: year, storeId: targetStoreId }
+        : { targetType: "yearly", targetYear: year, storeId: null },
     });
     if (yearlyTarget) {
-      const yearSummary = await this.getNaturalYearSummary(storeId);
+      const yearSummary = await this.getNaturalYearSummary(storeFilter);
       result.yearly = {
         target: yearlyTarget.targetAmount,
         actual: yearSummary.netSales,
@@ -422,14 +439,14 @@ export class AnalyticsService {
     }
 
     const quarterlyTarget = await db.profitTarget.findFirst({
-      where: storeId
-        ? { targetType: "quarterly", targetYear: year, targetQuarter: quarter, storeId }
-        : { targetType: "quarterly", targetYear: year, targetQuarter: quarter },
+      where: targetStoreId
+        ? { targetType: "quarterly", targetYear: year, targetQuarter: quarter, storeId: targetStoreId }
+        : { targetType: "quarterly", targetYear: year, targetQuarter: quarter, storeId: null },
     });
     if (quarterlyTarget) {
       const quarterStartMonth = (quarter - 1) * 3 + 1;
       const quarterStart = new Date(year, quarterStartMonth - 1, 1);
-      const quarterSummary = await this.getCustomSummary(quarterStart, today, storeId);
+      const quarterSummary = await this.getCustomSummary(quarterStart, today, storeFilter);
       result.quarterly = {
         target: quarterlyTarget.targetAmount,
         actual: quarterSummary.netSales,
@@ -439,12 +456,12 @@ export class AnalyticsService {
     }
 
     const monthlyTarget = await db.profitTarget.findFirst({
-      where: storeId
-        ? { targetType: "monthly", targetYear: year, targetMonth: month, storeId }
-        : { targetType: "monthly", targetYear: year, targetMonth: month },
+      where: targetStoreId
+        ? { targetType: "monthly", targetYear: year, targetMonth: month, storeId: targetStoreId }
+        : { targetType: "monthly", targetYear: year, targetMonth: month, storeId: null },
     });
     if (monthlyTarget) {
-      const monthSummary = await this.getMonthSummary(storeId);
+      const monthSummary = await this.getMonthSummary(storeFilter);
       const monthStart = new Date(year, month - 1, 1);
       const nextMonth = new Date(year, month, 1);
       const daysLeft = Math.ceil((nextMonth.getTime() - today.getTime()) / (24 * 60 * 60 * 1000));
@@ -460,16 +477,15 @@ export class AnalyticsService {
   }
 
   // ---------- 推广分布 ----------
-  static async getPromotionBreakdown(days: number, storeId?: string): Promise<Record<string, number>> {
+  static async getPromotionBreakdown(days: number, storeFilter?: StoreFilter): Promise<Record<string, number>> {
     const end = new Date();
     end.setHours(0, 0, 0, 0);
     const start = new Date(end);
     start.setDate(start.getDate() - (days - 1));
 
-    const where: Prisma.DailyRecordWhereInput = {
+    const where: Prisma.DailyRecordWhereInput = applyStoreFilter({
       recordDate: { gte: start, lte: end },
-    };
-    if (storeId) where.storeId = storeId;
+    }, storeFilter);
 
     const records = await db.dailyRecord.findMany({ where, select: { promotionData: true } });
     const breakdown: Record<string, number> = {};
@@ -496,9 +512,8 @@ export class AnalyticsService {
     return cost as MonthlyCostData;
   }
 
-  static async getMonthlyCosts(storeId?: string, year?: number): Promise<MonthlyCostData[]> {
-    const where: any = {};
-    if (storeId) where.storeId = storeId;
+  static async getMonthlyCosts(storeFilter?: StoreFilter, year?: number): Promise<MonthlyCostData[]> {
+    const where: any = applyStoreFilter({}, storeFilter);
     if (year) where.year = year;
     const costs = await db.monthlyCost.findMany({
       where,
@@ -534,7 +549,7 @@ export class AnalyticsService {
   }
 
   // ---------- 数据上下文（供 AI 使用） ----------
-  static async buildDataContext(storeId?: string): Promise<string> {
+  static async buildDataContext(storeFilter?: StoreFilter): Promise<string> {
     const today = new Date();
     const yesterday = new Date(today);
     yesterday.setDate(yesterday.getDate() - 1);
@@ -542,19 +557,24 @@ export class AnalyticsService {
     yesterday.setHours(0, 0, 0, 0);
 
     const [todaySum, yesterdaySum, weekSum, monthSum, naturalYearSum, seasonalYearSum, progress] = await Promise.all([
-      this.getTodaySummary(storeId),
-      this.getCustomSummary(yesterday, yesterday, storeId),
-      this.getWeekSummary(storeId),
-      this.getMonthSummary(storeId),
-      this.getNaturalYearSummary(storeId),
-      this.getSeasonalYearSummary(storeId),
-      this.getProfitTargetProgress(storeId),
+      this.getTodaySummary(storeFilter),
+      this.getCustomSummary(yesterday, yesterday, storeFilter),
+      this.getWeekSummary(storeFilter),
+      this.getMonthSummary(storeFilter),
+      this.getNaturalYearSummary(storeFilter),
+      this.getSeasonalYearSummary(storeFilter),
+      this.getProfitTargetProgress(storeFilter),
     ]);
 
     let storeName = "全店铺汇总";
-    if (storeId) {
-      const store = await db.store.findUnique({ where: { id: storeId } });
+    if (typeof storeFilter === "string") {
+      const store = await db.store.findUnique({ where: { id: storeFilter } });
       if (store) storeName = store.name;
+    } else if (Array.isArray(storeFilter) && storeFilter.length === 1) {
+      const store = await db.store.findUnique({ where: { id: storeFilter[0] } });
+      if (store) storeName = store.name;
+    } else if (Array.isArray(storeFilter) && storeFilter.length > 1) {
+      storeName = `${storeFilter.length} 个店铺汇总`;
     }
 
     const salesChangePct = yesterdaySum.salesAmount > 0

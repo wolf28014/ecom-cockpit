@@ -75,8 +75,22 @@ async function main() {
     return;
   }
 
-  // 1. 创建店铺
-  for (const s of DEMO_STORES) await db.store.create({ data: s });
+  // 0. 创建默认用户（demo@ecom.com / demo123）
+  const crypto = await import("crypto");
+  const passwordHash = crypto.createHash("sha256").update("demo123").digest("hex");
+  const defaultUser = await db.user.create({
+    data: {
+      email: "demo@ecom.com",
+      passwordHash,
+      name: "演示用户",
+    },
+  });
+  console.log(`✓ 创建默认用户: demo@ecom.com (密码: demo123)`);
+
+  // 1. 创建店铺（关联到默认用户）
+  for (const s of DEMO_STORES) {
+    await db.store.create({ data: { ...s, userId: defaultUser.id } });
+  }
   const stores = await db.store.findMany();
   console.log(`✓ 创建 ${stores.length} 个店铺`);
 

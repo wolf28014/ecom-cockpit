@@ -1,20 +1,37 @@
 import { NextRequest, NextResponse } from "next/server";
-import { AnalyticsService } from "@/lib/analytics";
+import { AnalyticsService, StoreFilter } from "@/lib/analytics";
+import { getCurrentUserStoreIds } from "@/lib/auth";
 
 export async function GET(req: NextRequest) {
-  const storeId = req.nextUrl.searchParams.get("storeId") || undefined;
-  const period = req.nextUrl.searchParams.get("period") || "all"; // daily | weekly | monthly | yearly
+  const userStoreIds = await getCurrentUserStoreIds();
+  if (!userStoreIds) {
+    return NextResponse.json({ error: "未登录" }, { status: 401 });
+  }
+
+  const storeIdsParam = req.nextUrl.searchParams.get("storeIds");
+  const singleStoreId = req.nextUrl.searchParams.get("storeId");
+
+  // 解析店铺筛选（必须在用户店铺范围内）
+  let storeFilter: StoreFilter;
+  if (storeIdsParam) {
+    const ids = storeIdsParam.split(",").filter(Boolean).filter(id => userStoreIds.includes(id));
+    storeFilter = ids.length === 0 ? userStoreIds : (ids.length === 1 ? ids[0] : ids);
+  } else if (singleStoreId) {
+    storeFilter = userStoreIds.includes(singleStoreId) ? singleStoreId : userStoreIds;
+  } else {
+    storeFilter = userStoreIds;
+  }
 
   const [today, week, month, trend14, trend30, trend180, skuStats, naturalYear, seasonalYear] = await Promise.all([
-    AnalyticsService.getTodaySummary(storeId),
-    AnalyticsService.getWeekSummary(storeId),
-    AnalyticsService.getMonthSummary(storeId),
-    AnalyticsService.getTrend(14, storeId),
-    AnalyticsService.getTrend(30, storeId),
-    AnalyticsService.getTrend(180, storeId),
-    AnalyticsService.getSkuStats(30, storeId),
-    AnalyticsService.getNaturalYearSummary(storeId),
-    AnalyticsService.getSeasonalYearSummary(storeId),
+    AnalyticsService.getTodaySummary(storeFilter),
+    AnalyticsService.getWeekSummary(storeFilter),
+    AnalyticsService.getMonthSummary(storeFilter),
+    AnalyticsService.getTrend(14, storeFilter),
+    AnalyticsService.getTrend(30, storeFilter),
+    AnalyticsService.getTrend(180, storeFilter),
+    AnalyticsService.getSkuStats(30, storeFilter),
+    AnalyticsService.getNaturalYearSummary(storeFilter),
+    AnalyticsService.getSeasonalYearSummary(storeFilter),
   ]);
 
   // 环比
@@ -24,10 +41,10 @@ export async function GET(req: NextRequest) {
   const lastWeekEnd = new Date(lastWeekStart); lastWeekEnd.setDate(lastWeekEnd.getDate() + 6);
 
   const [yesterdaySum, lastWeekSum, naturalCumulative, seasonalCumulative] = await Promise.all([
-    AnalyticsService.getCustomSummary(yesterday, yesterday, storeId),
-    AnalyticsService.getCustomSummary(lastWeekStart, lastWeekEnd, storeId),
-    AnalyticsService.getCumulativeStats(storeId, "natural"),
-    AnalyticsService.getCumulativeStats(storeId, "seasonal"),
+    AnalyticsService.getCustomSummary(yesterday, yesterday, storeFilter),
+    AnalyticsService.getCustomSummary(lastWeekStart, lastWeekEnd, storeFilter),
+    AnalyticsService.getCumulativeStats(storeFilter, "natural"),
+    AnalyticsService.getCumulativeStats(storeFilter, "seasonal"),
   ]);
 
   const dailyChange = {
