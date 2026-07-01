@@ -1,0 +1,207 @@
+// 电商经营驾驶舱 Pro - 数据库 Schema
+
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "sqlite"
+  url      = env("DATABASE_URL")
+}
+
+// ============== 店铺 ==============
+model Store {
+  id        String   @id @default(cuid())
+  name      String
+  platform  String   // taobao | tmall | douyin | pinduoduo
+  shopUrl   String?
+  shopId    String?
+  contact   String?
+  note      String?
+  isActive  Boolean  @default(true)
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  dailyRecords DailyRecord[]
+  skus         Sku[]
+  targets      ProfitTarget[]
+  aiReports    AiReport[]
+  cashFlows    CashFlow[]
+}
+
+// ============== SKU ==============
+model Sku {
+  id        String   @id @default(cuid())
+  storeId   String
+  skuCode   String
+  skuName   String
+  category  String?
+  unitCost  Float    @default(0)
+  unitPrice Float    @default(0)
+  stock     Int      @default(0)
+  isActive  Boolean  @default(true)
+  createdAt DateTime @default(now())
+
+  store      Store       @relation(fields: [storeId], references: [id], onDelete: Cascade)
+  dailySkus  DailySku[]
+
+  @@unique([storeId, skuCode])
+  @@index([storeId])
+}
+
+// ============== 每日经营数据 ==============
+model DailyRecord {
+  id        String   @id @default(cuid())
+  storeId   String
+  recordDate DateTime
+
+  // 销售数据
+  salesAmount      Float @default(0)
+  orderCount       Int   @default(0)
+  refundAmount     Float @default(0)
+  refundOrderCount Int   @default(0)
+
+  // 推广（JSON 字符串）
+  promotionData  String @default("{}") // JSON: {"直通车": 100, ...}
+  promotionTotal Float  @default(0)
+
+  // 成本（JSON 字符串）
+  costData  String @default("{}")
+  costTotal Float  @default(0)
+
+  // 自动计算
+  grossProfit      Float @default(0)
+  netProfit        Float @default(0)
+  profitRate       Float @default(0)
+  roi              Float @default(0)
+  avgOrderValue    Float @default(0)
+  profitPerOrder   Float @default(0)
+  refundRate       Float @default(0)
+  promotionRate    Float @default(0)
+
+  note      String?
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  store     Store      @relation(fields: [storeId], references: [id], onDelete: Cascade)
+  dailySkus DailySku[]
+
+  @@unique([storeId, recordDate])
+  @@index([recordDate])
+}
+
+model DailySku {
+  id             String   @id @default(cuid())
+  dailyRecordId  String
+  skuId          String
+  storeId        String
+  recordDate     DateTime
+
+  salesAmount      Float @default(0)
+  orderCount       Int   @default(0)
+  refundAmount     Float @default(0)
+  refundOrderCount Int   @default(0)
+  quantity         Int   @default(0)
+  cost             Float @default(0)
+
+  grossProfit Float @default(0)
+  roi         Float @default(0)
+  refundRate  Float @default(0)
+
+  dailyRecord DailyRecord @relation(fields: [dailyRecordId], references: [id], onDelete: Cascade)
+  sku         Sku         @relation(fields: [skuId], references: [id], onDelete: Cascade)
+
+  @@unique([dailyRecordId, skuId])
+  @@index([recordDate, storeId])
+}
+
+// ============== 利润目标 ==============
+model ProfitTarget {
+  id        String   @id @default(cuid())
+  storeId   String
+  targetType String  // yearly | quarterly | monthly
+  targetYear Int
+  targetQuarter Int?
+  targetMonth Int?
+  targetAmount Float
+  note      String?
+  createdAt DateTime @default(now())
+
+  store Store @relation(fields: [storeId], references: [id], onDelete: Cascade)
+
+  @@index([storeId, targetType, targetYear])
+}
+
+// ============== 现金流 ==============
+model CashFlow {
+  id        String   @id @default(cuid())
+  storeId   String
+  recordDate DateTime
+  flowType  String   // income | expense
+  amount    Float
+  description String?
+  createdAt DateTime @default(now())
+
+  store Store @relation(fields: [storeId], references: [id], onDelete: Cascade)
+
+  @@index([recordDate])
+}
+
+// ============== 预警 ==============
+model Alert {
+  id        String   @id @default(cuid())
+  storeId   String?
+  alertType String
+  level     String   // info | warning | critical
+  title     String
+  content   String
+  triggeredAt DateTime @default(now())
+  isRead    Boolean  @default(false)
+  isResolved Boolean @default(false)
+}
+
+// ============== AI 报告 ==============
+model AiReport {
+  id        String   @id @default(cuid())
+  storeId   String?
+  reportType String  // daily | weekly | monthly | yearly | suggestion
+  periodStart DateTime?
+  periodEnd   DateTime?
+  title     String
+  content   String
+  summary   String?
+  model     String   @default("glm-4-plus")
+  createdAt DateTime @default(now())
+
+  store Store? @relation(fields: [storeId], references: [id], onDelete: Cascade)
+
+  @@index([storeId, reportType, createdAt])
+}
+
+// ============== 聊天历史 ==============
+model ChatHistory {
+  id        String   @id @default(cuid())
+  storeId   String   @default("") // 空字符串表示全局
+  role      String   // user | assistant
+  content   String
+  createdAt DateTime @default(now())
+}
+// ============== 系统设置 ==============
+model Setting {
+  id        String   @id @default(cuid())
+  key       String   @unique
+  value     String
+  description String?
+  updatedAt DateTime @updatedAt
+}
+
+// ============== 备份记录 ==============
+model BackupRecord {
+  id        String   @id @default(cuid())
+  backupType String  // manual | auto_weekly | auto_daily
+  filePath  String
+  fileSize  Int      @default(0)
+  status    String   @default("success")
+  note      String?
+  createdAt DateTime @default(now())
+}
