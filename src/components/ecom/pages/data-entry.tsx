@@ -9,6 +9,7 @@ import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Button } from "@/components/ui/button";
 import { Textarea } from "@/components/ui/textarea";
+import { ToggleGroup, ToggleGroupItem } from "@/components/ui/toggle-group";
 import { toast } from "sonner";
 
 const PROMOTION_FIELDS = [
@@ -42,14 +43,16 @@ export function DataEntryPage() {
     <div className="space-y-6">
       <div>
         <h1 className="text-2xl font-bold tracking-tight">数据录入</h1>
-        <p className="text-sm text-muted-foreground mt-1">每日数据 + 月度成本</p>
+        <p className="text-sm text-muted-foreground mt-1">每日数据 + 月度成本 + 数据明细</p>
       </div>
       <Tabs defaultValue="daily">
         <TabsList>
           <TabsTrigger value="daily">每日数据录入</TabsTrigger>
+          <TabsTrigger value="detail">数据明细</TabsTrigger>
           <TabsTrigger value="monthly">月度成本录入</TabsTrigger>
         </TabsList>
         <TabsContent value="daily"><DailyTab /></TabsContent>
+        <TabsContent value="detail"><DetailTab /></TabsContent>
         <TabsContent value="monthly"><MonthlyTab /></TabsContent>
       </Tabs>
     </div>
@@ -395,6 +398,178 @@ function MonthlyTab() {
           <Textarea value={note} onChange={(e) => setNote(e.target.value)} placeholder="可填写本月特殊说明..." className="min-h-[60px]" />
         </div>
       </SectionCard>
+    </div>
+  );
+}
+
+// =================== 数据明细表格（生意参谋风格） ===================
+function DetailTab() {
+  const { stores } = useStores();
+  const [storeId, setStoreId] = useState<string>("");
+  const [yearType, setYearType] = useState<"natural" | "seasonal">("natural");
+  const [data, setData] = useState<any>(null);
+  const [loading, setLoading] = useState(false);
+
+  useEffect(() => {
+    if (!storeId && stores.length > 0) {
+      // eslint-disable-next-line react-hooks/set-state-in-effect
+      setStoreId(stores[0].id);
+    }
+  }, [stores, storeId]);
+
+  useEffect(() => {
+    if (!storeId) return;
+    // eslint-disable-next-line react-hooks/set-state-in-effect
+    setLoading(true);
+    fetch(`/api/daily-detail?storeId=${storeId}&yearType=${yearType}`)
+      .then(r => r.json())
+      .then(d => { setData(d); setLoading(false); })
+      .catch(() => setLoading(false));
+  }, [storeId, yearType]);
+
+  const rows: any[] = data?.rows || [];
+  const summary: any = data?.summary || {};
+
+  const fmtMoney = (v: number) => v?.toLocaleString(undefined, { maximumFractionDigits: 2 }) || "0";
+  const fmtPct = (v: number | null) => v === null || v === undefined ? "—" : `${(v * 100).toFixed(2)}%`;
+  const fmtPct0 = (v: number | null) => v === null || v === undefined ? "—" : `${Math.round(v * 100)}%`;
+  const fmtYoy = (v: number | null) => {
+    if (v === null || v === undefined) return "—";
+    const sign = v >= 0 ? "+" : "";
+    return `${sign}${(v * 100).toFixed(1)}%`;
+  };
+
+  const yearLabel = yearType === "seasonal" ? "季节年" : "自然年";
+
+  return (
+    <div className="space-y-4">
+      {/* 顶部控制栏 */}
+      <Card>
+        <CardContent className="p-4 flex flex-wrap items-end gap-4">
+          <div className="space-y-1.5">
+            <Label className="text-xs">选择店铺</Label>
+            <StoreSelector value={storeId || "all"} onChange={(v) => setStoreId(v === "all" ? "" : v)} allowAll={false} />
+          </div>
+          <div className="space-y-1.5">
+            <Label className="text-xs">统计周期</Label>
+            <ToggleGroup type="single" value={yearType} onValueChange={(v) => v && setYearType(v as "natural" | "seasonal")}>
+              <ToggleGroupItem value="natural" className="text-xs">自然年</ToggleGroupItem>
+              <ToggleGroupItem value="seasonal" className="text-xs">季节年</ToggleGroupItem>
+            </ToggleGroup>
+          </div>
+          <div className="ml-auto text-right">
+            <p className="text-xs text-muted-foreground">{yearLabel}周期</p>
+            <p className="text-sm font-medium">{data?.startDate} ~ {data?.endDate}</p>
+            <p className="text-xs text-muted-foreground mt-1">共 {data?.totalDays || 0} 天</p>
+          </div>
+        </CardContent>
+      </Card>
+
+      {/* 数据表格 - 生意参谋风格横向滚动 */}
+      <Card>
+        <CardContent className="p-0">
+          <div className="overflow-x-auto">
+            <table className="w-full text-sm border-collapse">
+              <thead>
+                <tr className="bg-[#0071E3] text-white">
+                  <th className="sticky left-0 z-10 bg-[#0071E3] px-3 py-2.5 text-left font-semibold whitespace-nowrap border-r border-white/20">日期</th>
+                  <th className="px-3 py-2.5 text-right font-semibold whitespace-nowrap">销售额</th>
+                  <th className="px-3 py-2.5 text-right font-semibold whitespace-nowrap">订单量</th>
+                  <th className="px-3 py-2.5 text-right font-semibold whitespace-nowrap">退款金额</th>
+                  <th className="px-3 py-2.5 text-right font-semibold whitespace-nowrap">推广费用</th>
+                  <th className="px-3 py-2.5 text-right font-semibold whitespace-nowrap">访客数</th>
+                  <th className="px-3 py-2.5 text-right font-semibold whitespace-nowrap bg-[#0058B0]">累积销售额</th>
+                  <th className="px-3 py-2.5 text-right font-semibold whitespace-nowrap bg-[#0058B0]">累积退款</th>
+                  <th className="px-3 py-2.5 text-right font-semibold whitespace-nowrap bg-[#34C759]">净销售额</th>
+                  <th className="px-3 py-2.5 text-right font-semibold whitespace-nowrap">退款率</th>
+                  <th className="px-3 py-2.5 text-right font-semibold whitespace-nowrap">同比去年</th>
+                  <th className="px-3 py-2.5 text-right font-semibold whitespace-nowrap">推广占比</th>
+                  <th className="px-3 py-2.5 text-right font-semibold whitespace-nowrap bg-[#0058B0]">累积推广占比</th>
+                  <th className="px-3 py-2.5 text-right font-semibold whitespace-nowrap bg-[#34C759]">累积净销售额</th>
+                  <th className="px-3 py-2.5 text-right font-semibold whitespace-nowrap bg-[#0058B0]">累积推广费</th>
+                  <th className="px-3 py-2.5 text-right font-semibold whitespace-nowrap bg-[#0058B0]">累积净推广费率</th>
+                  <th className="px-3 py-2.5 text-right font-semibold whitespace-nowrap">投产比</th>
+                </tr>
+              </thead>
+              <tbody>
+                {loading && (
+                  <tr>
+                    <td colSpan={17} className="text-center py-12 text-muted-foreground">加载中...</td>
+                  </tr>
+                )}
+                {!loading && rows.length === 0 && (
+                  <tr>
+                    <td colSpan={17} className="text-center py-12 text-muted-foreground">暂无数据</td>
+                  </tr>
+                )}
+                {!loading && rows.map((r, i) => (
+                  <tr key={r.date} className={i % 2 === 0 ? "bg-white" : "bg-[#F8F8FA]"} style={{ height: "32px" }}>
+                    <td className="sticky left-0 z-10 px-3 py-2 text-left whitespace-nowrap border-r border-[#E5E5EA] bg-inherit font-medium">
+                      {r.date}
+                    </td>
+                    <td className="px-3 py-2 text-right whitespace-nowrap">{fmtMoney(r.sales)}</td>
+                    <td className="px-3 py-2 text-right whitespace-nowrap">{r.orders}</td>
+                    <td className="px-3 py-2 text-right whitespace-nowrap text-[#FF9500]">{fmtMoney(r.refund)}</td>
+                    <td className="px-3 py-2 text-right whitespace-nowrap text-[#0071E3]">{fmtMoney(r.promotion)}</td>
+                    <td className="px-3 py-2 text-right whitespace-nowrap">{r.visitors}</td>
+                    <td className="px-3 py-2 text-right whitespace-nowrap bg-[#F0F7FF] font-medium">{fmtMoney(r.cumSales)}</td>
+                    <td className="px-3 py-2 text-right whitespace-nowrap bg-[#F0F7FF]">{fmtMoney(r.cumRefund)}</td>
+                    <td className="px-3 py-2 text-right whitespace-nowrap bg-[#F0FFF4] font-medium text-[#34C759]">{fmtMoney(r.netSales)}</td>
+                    <td className="px-3 py-2 text-right whitespace-nowrap">{fmtPct(r.refundRate)}</td>
+                    <td className={`px-3 py-2 text-right whitespace-nowrap font-medium ${r.yoyGrowth === null ? "text-muted-foreground" : r.yoyGrowth >= 0 ? "text-[#34C759]" : "text-[#FF3B30]"}`}>
+                      {fmtYoy(r.yoyGrowth)}
+                    </td>
+                    <td className="px-3 py-2 text-right whitespace-nowrap">{fmtPct(r.promotionRate)}</td>
+                    <td className="px-3 py-2 text-right whitespace-nowrap bg-[#F0F7FF]">{fmtPct(r.cumPromotionRate)}</td>
+                    <td className="px-3 py-2 text-right whitespace-nowrap bg-[#F0FFF4] font-medium text-[#34C759]">{fmtMoney(r.cumNetSales)}</td>
+                    <td className="px-3 py-2 text-right whitespace-nowrap bg-[#F0F7FF]">{fmtMoney(r.cumPromotion)}</td>
+                    <td className="px-3 py-2 text-right whitespace-nowrap bg-[#F0F7FF]">{fmtPct(r.cumNetPromotionRate)}</td>
+                    <td className="px-3 py-2 text-right whitespace-nowrap font-semibold text-[#AF52DE]">{r.roi.toFixed(2)}</td>
+                  </tr>
+                ))}
+              </tbody>
+              {rows.length > 0 && (
+                <tfoot>
+                  <tr className="bg-[#1D1D1F] text-white font-semibold" style={{ height: "40px" }}>
+                    <td className="sticky left-0 z-10 bg-[#1D1D1F] px-3 py-2 text-left border-r border-white/20">汇总</td>
+                    <td className="px-3 py-2 text-right">{fmtMoney(summary.sales)}</td>
+                    <td className="px-3 py-2 text-right">{summary.orders}</td>
+                    <td className="px-3 py-2 text-right text-[#FF9500]">{fmtMoney(summary.refund)}</td>
+                    <td className="px-3 py-2 text-right text-[#5BA3FF]">{fmtMoney(summary.promotion)}</td>
+                    <td className="px-3 py-2 text-right">{summary.visitors}</td>
+                    <td className="px-3 py-2 text-right bg-[#0071E3]">{fmtMoney(summary.cumSales)}</td>
+                    <td className="px-3 py-2 text-right bg-[#0071E3]">{fmtMoney(summary.cumRefund)}</td>
+                    <td className="px-3 py-2 text-right bg-[#34C759]">{fmtMoney(summary.netSales)}</td>
+                    <td className="px-3 py-2 text-right">{fmtPct(summary.refundRate)}</td>
+                    <td className="px-3 py-2 text-right text-muted-foreground">—</td>
+                    <td className="px-3 py-2 text-right">{fmtPct(summary.promotionRate)}</td>
+                    <td className="px-3 py-2 text-right bg-[#0071E3]">{fmtPct(summary.cumPromotionRate)}</td>
+                    <td className="px-3 py-2 text-right bg-[#34C759]">{fmtMoney(summary.cumNetSales)}</td>
+                    <td className="px-3 py-2 text-right bg-[#0071E3]">{fmtMoney(summary.cumPromotion)}</td>
+                    <td className="px-3 py-2 text-right bg-[#0071E3]">{fmtPct(summary.cumNetPromotionRate)}</td>
+                    <td className="px-3 py-2 text-right text-[#AF52DE]">{summary.roi.toFixed(2)}</td>
+                  </tr>
+                </tfoot>
+              )}
+            </table>
+          </div>
+        </CardContent>
+      </Card>
+
+      {/* 图例说明 */}
+      <Card>
+        <CardContent className="p-4">
+          <p className="text-xs text-muted-foreground mb-2 font-medium">字段说明</p>
+          <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-2 text-xs text-muted-foreground">
+            <div>• <span className="text-[#0071E3]">蓝色背景</span> = 累积指标（从周期起始日累加）</div>
+            <div>• <span className="text-[#34C759]">绿色背景</span> = 净额指标（销售 - 退款）</div>
+            <div>• <span className="text-[#FF9500]">橙色文字</span> = 退款相关</div>
+            <div>• <span className="text-[#0071E3]">蓝色文字</span> = 推广相关</div>
+            <div>• <span className="text-[#AF52DE]">紫色文字</span> = 投产比</div>
+            <div>• 同比去年需有去年同期数据才会显示</div>
+          </div>
+        </CardContent>
+      </Card>
     </div>
   );
 }
