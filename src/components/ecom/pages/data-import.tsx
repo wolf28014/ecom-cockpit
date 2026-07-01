@@ -2,7 +2,7 @@
 
 import { useState, useRef } from "react";
 import { KpiRow, SectionCard } from "@/components/ecom/kpi";
-import { StoreSelector } from "@/components/ecom/store-selector";
+import { StoreSelector, useStores } from "@/components/ecom/store-selector";
 import { Button } from "@/components/ui/button";
 import { Label } from "@/components/ui/label";
 import {
@@ -49,6 +49,7 @@ interface PreviewRow {
 }
 
 export function DataImportPage() {
+  const { stores } = useStores();
   const [storeId, setStoreId] = useState("all");
   const [templateType, setTemplateType] = useState("general");
   const [previewData, setPreviewData] = useState<PreviewRow[]>([]);
@@ -157,7 +158,7 @@ export function DataImportPage() {
     if (previewData.length === 0) { toast.error("暂无数据"); return; }
 
     // 获取店铺名
-    const storeName = document.querySelector("button[role='combobox']")?.textContent || "店铺";
+    const storeName = stores.find(s => s.id === storeId)?.name || "店铺";
 
     // 创建导入任务（全局可见，即使离开页面也能看到进度）
     const taskId = importManager.addTask(storeId, storeName, previewData.length);
