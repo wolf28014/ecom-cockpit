@@ -1,23 +1,20 @@
 "use client";
 
-import { useState } from "react";
-import { KpiRow, SectionCard } from "@/components/ecom/kpi";
-import { StoreSelector, RefreshButton } from "@/components/ecom/store-selector";
+import { useState, useMemo } from "react";
+import { SectionCard } from "@/components/ecom/kpi";
+import { RefreshButton } from "@/components/ecom/store-selector";
 import { StoreMultiSelect } from "@/components/ecom/store-multi-select";
 import { DateRangePicker, type DateRange } from "@/components/ecom/date-range-picker";
 import { YearTypeSelector } from "@/components/ecom/year-type-selector";
 import { DataDetailTable } from "@/components/ecom/data-detail-table";
+import { DraggableKpiGrid, type KpiItem } from "@/components/ecom/draggable-kpi-grid";
 import { useCachedFetch } from "@/lib/use-cached-fetch";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
-import { ToggleGroup, ToggleGroupItem } from "@/components/ui/toggle-group";
 import { Card, CardContent } from "@/components/ui/card";
 import {
-  BarChart, Bar, LineChart, Line, PieChart, Pie, Cell,
-  XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer,
-  ComposedChart, Legend,
+  BarChart, Bar, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer,
+  ComposedChart, Legend, Line,
 } from "recharts";
-
-const PIE_COLORS = ["#0071E3", "#34C759", "#FF9500", "#AF52DE", "#FF3B30", "#5856D6"];
 
 export function AnalyticsPage() {
   const [storeIds, setStoreIds] = useState<string[]>([]);
@@ -29,20 +26,56 @@ export function AnalyticsPage() {
   });
 
   const sidParam = storeIds.length > 0 ? `&storeIds=${storeIds.join(",")}` : "";
-  const rangeParam = `&start=${dateRange.start}&end=${dateRange.end}`;
-  const url = `/api/analytics?${sidParam}${rangeParam}`;
+  const url = `/api/analytics?${sidParam}&start=${dateRange.start}&end=${dateRange.end}`;
   const cacheKey = `ecom:analytics:${storeIds.join(",") || "all"}:${dateRange.start}:${dateRange.end}`;
   const { data, loading, refresh } = useCachedFetch(url, cacheKey);
 
-  const fmtMoney = (v: number) => `¥${(v || 0).toLocaleString(undefined, { maximumFractionDigits: 0 })}`;
-  const fmtPct = (v: number) => `${(v * 100).toFixed(1)}%`;
+  const fmtMoney = (v: number) => `¥${(v || 0).toLocaleString(undefined, { maximumFractionDigits: 2 })}`;
+  const fmtMoney0 = (v: number) => `¥${(v || 0).toLocaleString(undefined, { maximumFractionDigits: 0 })}`;
+  const fmtPct = (v: number) => v === 0 || !v ? "0.00%" : `${(v * 100).toFixed(2)}%`;
+  const fmtYoy = (v: number) => {
+    if (!v || v === 0) return "—";
+    const sign = v >= 0 ? "+" : "";
+    return `${sign}${(v * 100).toFixed(1)}%`;
+  };
+
+  // 构建概览卡片项（单项数据）
+  const buildOverviewItems = (d: any): KpiItem[] => {
+    if (!d) return [];
+    return [
+      { key: "sales", title: "销售额", value: fmtMoney0(d.salesAmount), subtitle: `${d.orderCount} 单`, color: "#0071E3" },
+      { key: "orders", title: "订单量", value: String(d.orderCount || 0), subtitle: `客单价 ${fmtMoney0(d.avgOrderValue)}`, color: "#1D1D1F" },
+      { key: "refund", title: "退款金额", value: fmtMoney0(d.refundAmount), subtitle: `退款率 ${fmtPct(d.refundRate)}`, color: "#FF9500" },
+      { key: "promotion", title: "推广费用", value: fmtMoney0(d.promotionTotal), subtitle: `推广占比 ${fmtPct(d.promotionRate)}`, color: "#0071E3" },
+      { key: "visitors", title: "访客数", value: String(d.visitors || 0), subtitle: `转化率 ${fmtPct(d.conversionRate)}`, color: "#AF52DE" },
+      { key: "netSales", title: "净销售额", value: fmtMoney0(d.netSales), subtitle: "销售 - 退款", color: "#34C759" },
+      { key: "refundRate", title: "退款率", value: fmtPct(d.refundRate), subtitle: fmtMoney0(d.refundAmount), color: "#FF3B30" },
+      { key: "promotionRate", title: "推广占比", value: fmtPct(d.promotionRate), subtitle: fmtMoney0(d.promotionTotal), color: "#0071E3" },
+      { key: "roi", title: "投产比", value: (d.roi || 0).toFixed(2), subtitle: "销售 / 推广", color: "#AF52DE" },
+    ];
+  };
+
+  // 构建累积指标卡片项
+  const buildCumulativeItems = (d: any): KpiItem[] => {
+    if (!d) return [];
+    return [
+      { key: "cumSales", title: "累积销售额", value: fmtMoney0(d.cumulativeSales), color: "#0071E3", isCumulative: true },
+      { key: "cumRefund", title: "累积退款", value: fmtMoney0(d.cumulativeRefund), color: "#FF9500", isCumulative: true },
+      { key: "cumNetSales", title: "累积净销售额", value: fmtMoney0(d.cumulativeNetSales), color: "#34C759", isCumulative: true },
+      { key: "cumPromotion", title: "累积推广费", value: fmtMoney0(d.cumulativePromotion), color: "#AF52DE", isCumulative: true },
+      { key: "cumRefundRate", title: "累积退款率", value: fmtPct(d.cumulativeRefundRate), color: "#FF9500", isCumulative: true },
+      { key: "cumPromotionRate", title: "累积推广占比", value: fmtPct(d.cumulativePromotionRate), color: "#0071E3", isCumulative: true },
+      { key: "cumNetPromotionRate", title: "累积净推广费率", value: fmtPct(d.cumulativeNetPromotionRate), color: "#FF3B30", isCumulative: true },
+      { key: "yoyGrowth", title: "同比去年", value: fmtYoy(d.yoyGrowth), color: (d.yoyGrowth || 0) >= 0 ? "#34C759" : "#FF3B30", isCumulative: true },
+    ];
+  };
 
   return (
     <div className="space-y-6">
       <div className="flex items-center justify-between flex-wrap gap-3">
         <div>
           <h1 className="text-2xl font-bold tracking-tight">经营分析中心</h1>
-          <p className="text-sm text-muted-foreground mt-1">日 / 周 / 月 / 年 四档分析 · 自然年与季节年双轨</p>
+          <p className="text-sm text-muted-foreground mt-1">日 / 周 / 月 / 年 / 自定义 统一分析 · 支持拖拽排序</p>
         </div>
         <div className="flex items-center gap-2 flex-wrap">
           <StoreMultiSelect value={storeIds} onChange={setStoreIds} />
@@ -51,33 +84,38 @@ export function AnalyticsPage() {
         </div>
       </div>
 
-      <Tabs defaultValue="daily">
-        <TabsList>
-          <TabsTrigger value="daily">日分析</TabsTrigger>
-          <TabsTrigger value="weekly">周分析</TabsTrigger>
-          <TabsTrigger value="monthly">月分析</TabsTrigger>
-          <TabsTrigger value="yearly">年分析</TabsTrigger>
-        </TabsList>
+      {loading && !data && (
+        <Card><CardContent className="py-16 text-center text-muted-foreground">加载中...</CardContent></Card>
+      )}
 
-        {/* 日分析 */}
-        <TabsContent value="daily">
-          <div className="space-y-4">
-            <KpiRow cards={[
-              { title: "日销售额", value: fmtMoney(data?.today.salesAmount), subtitle: `${data?.today.orderCount} 单 · ${data?.today.visitors} 访客`, trend: data?.dailyChange.sales, trendLabel: "环比", accent: "#0071E3" },
-              { title: "日净销售额", value: fmtMoney(data?.today.netSales), subtitle: `销售 - 退款`, trend: data?.dailyChange.netSales, trendLabel: "环比", accent: "#34C759" },
-              { title: "日退款率", value: fmtPct(data?.today.refundRate), subtitle: `退款 ${fmtMoney(data?.today.refundAmount)}`, accent: "#FF9500" },
-              { title: "日投产比", value: (data?.today.roi || 0).toFixed(2), subtitle: `推广占比 ${fmtPct(data?.today.promotionRate)}`, accent: "#AF52DE" },
-              { title: "日转化率", value: `${(data?.today.conversionRate * 100 || 0).toFixed(2)}%`, subtitle: `客单价 ${fmtMoney(data?.today.avgOrderValue)}`, accent: "#FF3B30" },
-            ]} />
+      {data && (
+        <Tabs defaultValue="daily">
+          <TabsList>
+            <TabsTrigger value="daily">日分析</TabsTrigger>
+            <TabsTrigger value="weekly">周分析</TabsTrigger>
+            <TabsTrigger value="monthly">月分析</TabsTrigger>
+            <TabsTrigger value="yearly">年分析</TabsTrigger>
+            <TabsTrigger value="custom">自定义</TabsTrigger>
+          </TabsList>
 
-            <SectionCard title="近 14 天趋势" subtitle="销售额/净销售额/投产比">
-              <div className="h-[320px]">
+          {/* 日分析 */}
+          <TabsContent value="daily">
+            <PeriodSection
+              title="今日概览"
+              subtitle="单项数据 · 可拖拽排序"
+              overviewItems={buildOverviewItems(data.today)}
+              cumulativeItems={buildCumulativeItems(data.naturalCumulative)}
+              storageKeyPrefix="analytics:daily"
+            />
+            {/* 趋势图 */}
+            <SectionCard title="近 14 天趋势" subtitle="销售额/净销售额/投产比" className="mt-4">
+              <div className="h-[300px]">
                 <ResponsiveContainer width="100%" height="100%">
-                  <ComposedChart data={(data?.trend14 || []).map((p: any) => ({ ...p, date: p.date.slice(5), roi: p.roi }))}>
+                  <ComposedChart data={(data.trend30 || []).slice(-14).map((p: any) => ({ ...p, date: p.date.slice(5) }))}>
                     <CartesianGrid strokeDasharray="3 3" stroke="#F2F2F7" />
-                    <XAxis dataKey="date" stroke="#6E6E73" fontSize={11} tickLine={false} />
-                    <YAxis yAxisId="left" stroke="#6E6E73" fontSize={11} tickLine={false} axisLine={false} />
-                    <YAxis yAxisId="right" orientation="right" stroke="#6E6E73" fontSize={11} tickLine={false} axisLine={false} />
+                    <XAxis dataKey="date" stroke="#6E6E73" fontSize={11} />
+                    <YAxis yAxisId="left" stroke="#6E6E73" fontSize={11} />
+                    <YAxis yAxisId="right" orientation="right" stroke="#6E6E73" fontSize={11} />
                     <Tooltip contentStyle={{ background: "#1D1D1F", border: "none", borderRadius: 8, color: "#fff", fontSize: 12 }} />
                     <Legend wrapperStyle={{ fontSize: 12 }} />
                     <Bar yAxisId="left" dataKey="sales" name="销售额" fill="#0071E3" radius={[4, 4, 0, 0]} barSize={14} />
@@ -87,152 +125,127 @@ export function AnalyticsPage() {
                 </ResponsiveContainer>
               </div>
             </SectionCard>
-
-            {/* 数据明细表格 - 支持最近5年 */}
-            <SectionCard title="数据明细" subtitle="每日经营数据明细 · 支持自然年/季节年切换 · 可查看最近5年">
+            {/* 数据明细表格 */}
+            <div className="mt-4">
               <DataDetailTable />
-            </SectionCard>
-          </div>
-        </TabsContent>
-        <TabsContent value="weekly">
-          <div className="space-y-4">
-            <KpiRow cards={[
-              { title: "本周销售额", value: fmtMoney(data?.week.salesAmount), subtitle: `${data?.week.orderCount} 单`, trend: data?.weeklyChange.sales, trendLabel: "环比上周", accent: "#0071E3" },
-              { title: "本周净销售额", value: fmtMoney(data?.week.netSales), subtitle: `销售 - 退款`, trend: data?.weeklyChange.netSales, trendLabel: "环比上周", accent: "#34C759" },
-              { title: "本周投产比", value: (data?.week.roi || 0).toFixed(2), subtitle: `推广 ${fmtMoney(data?.week.promotionTotal)}`, accent: "#AF52DE" },
-              { title: "本周转化率", value: `${(data?.week.conversionRate * 100 || 0).toFixed(2)}%`, subtitle: `退款率 ${fmtPct(data?.week.refundRate)}`, accent: "#FF3B30" },
-            ]} />
+            </div>
+          </TabsContent>
 
-            <SectionCard title="本周 vs 上周对比" subtitle="14 天每日销售额">
-              <div className="h-[320px]">
-                <ResponsiveContainer width="100%" height="100%">
-                  <BarChart data={(data?.trend14 || []).map((p: any) => ({ ...p, date: p.date.slice(5) }))}>
-                    <CartesianGrid strokeDasharray="3 3" stroke="#F2F2F7" />
-                    <XAxis dataKey="date" stroke="#6E6E73" fontSize={11} tickLine={false} />
-                    <YAxis stroke="#6E6E73" fontSize={11} tickLine={false} axisLine={false} />
-                    <Tooltip contentStyle={{ background: "#1D1D1F", border: "none", borderRadius: 8, color: "#fff", fontSize: 12 }} formatter={(v: any) => `¥${v.toLocaleString()}`} />
-                    <Bar dataKey="sales" name="销售额" fill="#0071E3" radius={[4, 4, 0, 0]} />
-                  </BarChart>
-                </ResponsiveContainer>
-              </div>
-            </SectionCard>
-          </div>
-        </TabsContent>
+          {/* 周分析 */}
+          <TabsContent value="weekly">
+            <PeriodSection
+              title="本周概览"
+              subtitle="单项数据 · 可拖拽排序"
+              overviewItems={buildOverviewItems(data.week)}
+              cumulativeItems={buildCumulativeItems(data.naturalCumulative)}
+              storageKeyPrefix="analytics:weekly"
+            />
+          </TabsContent>
 
-        {/* 月分析 */}
-        <TabsContent value="monthly">
-          <div className="space-y-4">
-            <KpiRow cards={[
-              { title: "本月销售额", value: fmtMoney(data?.month.salesAmount), subtitle: `${data?.month.orderCount} 单`, accent: "#0071E3" },
-              { title: "本月净销售额", value: fmtMoney(data?.month.netSales), subtitle: `退款率 ${fmtPct(data?.month.refundRate)}`, accent: "#34C759" },
-              { title: "本月投产比", value: (data?.month.roi || 0).toFixed(2), subtitle: `推广 ${fmtMoney(data?.month.promotionTotal)}`, accent: "#AF52DE" },
-              { title: "本月推广占比", value: fmtPct(data?.month.promotionRate), subtitle: `转化率 ${(data?.month.conversionRate * 100 || 0).toFixed(2)}%`, accent: "#FF3B30" },
-            ]} />
+          {/* 月分析 */}
+          <TabsContent value="monthly">
+            <PeriodSection
+              title="本月概览"
+              subtitle="单项数据 · 可拖拽排序"
+              overviewItems={buildOverviewItems(data.month)}
+              cumulativeItems={buildCumulativeItems(data.naturalCumulative)}
+              storageKeyPrefix="analytics:monthly"
+            />
+          </TabsContent>
 
-            <SectionCard title="本月每日趋势" subtitle="销售/净销售/投产比">
-              <div className="h-[320px]">
-                <ResponsiveContainer width="100%" height="100%">
-                  <ComposedChart data={(data?.trend30 || []).map((p: any) => ({ ...p, date: p.date.slice(5), roi: p.roi }))}>
-                    <CartesianGrid strokeDasharray="3 3" stroke="#F2F2F7" />
-                    <XAxis dataKey="date" stroke="#6E6E73" fontSize={11} tickLine={false} />
-                    <YAxis yAxisId="left" stroke="#6E6E73" fontSize={11} tickLine={false} axisLine={false} />
-                    <YAxis yAxisId="right" orientation="right" stroke="#6E6E73" fontSize={11} tickLine={false} axisLine={false} />
-                    <Tooltip contentStyle={{ background: "#1D1D1F", border: "none", borderRadius: 8, color: "#fff", fontSize: 12 }} />
-                    <Legend wrapperStyle={{ fontSize: 12 }} />
-                    <Bar yAxisId="left" dataKey="sales" name="销售额" fill="#0071E3" radius={[4, 4, 0, 0]} barSize={10} />
-                    <Bar yAxisId="left" dataKey="netSales" name="净销售额" fill="#34C759" radius={[4, 4, 0, 0]} barSize={10} />
-                    <Line yAxisId="right" type="monotone" dataKey="roi" name="投产比" stroke="#FF9500" strokeWidth={2} dot={false} />
-                  </ComposedChart>
-                </ResponsiveContainer>
-              </div>
-            </SectionCard>
-          </div>
-        </TabsContent>
+          {/* 年分析 */}
+          <TabsContent value="yearly">
+            <YearSection data={data} fmtMoney0={fmtMoney0} fmtPct={fmtPct} fmtYoy={fmtYoy} />
+          </TabsContent>
 
-        {/* 年分析 - 自然年/季节年切换 */}
-        <TabsContent value="yearly">
-          <YearAnalysis data={data} />
-        </TabsContent>
-      </Tabs>
+          {/* 自定义日期范围 */}
+          <TabsContent value="custom">
+            {data.customSummary ? (
+              <PeriodSection
+                title={`${dateRange.start} ~ ${dateRange.end}`}
+                subtitle="自定义日期范围 · 可拖拽排序"
+                overviewItems={buildOverviewItems(data.customSummary)}
+                cumulativeItems={buildCumulativeItems(data.customCumulative)}
+                storageKeyPrefix="analytics:custom"
+              />
+            ) : (
+              <Card><CardContent className="py-12 text-center text-muted-foreground">请选择日期范围</CardContent></Card>
+            )}
+          </TabsContent>
+        </Tabs>
+      )}
     </div>
   );
 }
 
-function YearAnalysis({ data }: { data: any }) {
+// ============== 统一的周期分析区块 ==============
+function PeriodSection({
+  title, subtitle, overviewItems, cumulativeItems, storageKeyPrefix,
+}: {
+  title: string;
+  subtitle: string;
+  overviewItems: KpiItem[];
+  cumulativeItems: KpiItem[];
+  storageKeyPrefix: string;
+}) {
+  return (
+    <div className="space-y-4">
+      <SectionCard title={title} subtitle={subtitle}>
+        <DraggableKpiGrid items={overviewItems} storageKey={`${storageKeyPrefix}:overview`} columns={5} />
+      </SectionCard>
+      <SectionCard title="累积指标" subtitle="年度累计 · 可拖拽排序">
+        <DraggableKpiGrid items={cumulativeItems} storageKey={`${storageKeyPrefix}:cumulative`} columns={4} />
+      </SectionCard>
+    </div>
+  );
+}
+
+// ============== 年分析（含自然年/季节年切换） ==============
+function YearSection({ data, fmtMoney0, fmtPct, fmtYoy }: any) {
   const [yearType, setYearType] = useState<"natural" | "seasonal">("natural");
   const [year, setYear] = useState(new Date().getFullYear());
 
   const yearSummary = yearType === "seasonal" ? data?.seasonalYear : data?.naturalYear;
   const cumulative = yearType === "seasonal" ? data?.seasonalCumulative : data?.naturalCumulative;
-  const yearLabel = yearType === "seasonal" ? `季节年 ${year}（7/1 - 次年 6/30）` : `自然年 ${year}（1/1 - 12/31）`;
+  const yearLabel = yearType === "seasonal" ? `季节年 ${year}` : `自然年 ${year}`;
 
-  const fmtMoney = (v: number) => `¥${(v || 0).toLocaleString(undefined, { maximumFractionDigits: 0 })}`;
-  const fmtPct = (v: number) => `${(v * 100).toFixed(2)}%`;
+  // 构建概览卡片
+  const overviewItems: KpiItem[] = yearSummary ? [
+    { key: "sales", title: "年度销售额", value: fmtMoney0(yearSummary.salesAmount), subtitle: `${yearSummary.orderCount} 单 · ${yearSummary.visitors} 访客`, color: "#0071E3" },
+    { key: "orders", title: "年度订单量", value: String(yearSummary.orderCount || 0), color: "#1D1D1F" },
+    { key: "refund", title: "年度退款金额", value: fmtMoney0(yearSummary.refundAmount), subtitle: `退款率 ${fmtPct(yearSummary.refundRate)}`, color: "#FF9500" },
+    { key: "promotion", title: "年度推广费用", value: fmtMoney0(yearSummary.promotionTotal), subtitle: `推广占比 ${fmtPct(yearSummary.promotionRate)}`, color: "#0071E3" },
+    { key: "visitors", title: "年度访客数", value: String(yearSummary.visitors || 0), color: "#AF52DE" },
+    { key: "netSales", title: "年度净销售额", value: fmtMoney0(yearSummary.netSales), color: "#34C759" },
+    { key: "refundRate", title: "年度退款率", value: fmtPct(yearSummary.refundRate), color: "#FF3B30" },
+    { key: "promotionRate", title: "年度推广占比", value: fmtPct(yearSummary.promotionRate), color: "#0071E3" },
+    { key: "roi", title: "年度投产比", value: (yearSummary.roi || 0).toFixed(2), color: "#AF52DE" },
+  ] : [];
+
+  // 构建累积卡片
+  const cumulativeItems: KpiItem[] = cumulative ? [
+    { key: "cumSales", title: "累积销售额", value: fmtMoney0(cumulative.cumulativeSales), color: "#0071E3", isCumulative: true },
+    { key: "cumRefund", title: "累积退款", value: fmtMoney0(cumulative.cumulativeRefund), color: "#FF9500", isCumulative: true },
+    { key: "cumNetSales", title: "累积净销售额", value: fmtMoney0(cumulative.cumulativeNetSales), color: "#34C759", isCumulative: true },
+    { key: "cumPromotion", title: "累积推广费", value: fmtMoney0(cumulative.cumulativePromotion), color: "#AF52DE", isCumulative: true },
+    { key: "cumRefundRate", title: "累积退款率", value: fmtPct(cumulative.cumulativeRefundRate), color: "#FF9500", isCumulative: true },
+    { key: "cumPromotionRate", title: "累积推广占比", value: fmtPct(cumulative.cumulativePromotionRate), color: "#0071E3", isCumulative: true },
+    { key: "cumNetPromotionRate", title: "累积净推广费率", value: fmtPct(cumulative.cumulativeNetPromotionRate), color: "#FF3B30", isCumulative: true },
+    { key: "yoyGrowth", title: "同比去年", value: fmtYoy(cumulative.yoyGrowth), color: (cumulative.yoyGrowth || 0) >= 0 ? "#34C759" : "#FF3B30", isCumulative: true },
+  ] : [];
 
   return (
     <div className="space-y-4">
       <SectionCard
         title={`${yearLabel}概览`}
-        subtitle="可切换自然年 / 季节年，支持最近5年"
-        action={
-          <YearTypeSelector yearType={yearType} setYearType={setYearType} year={year} setYear={setYear} />
-        }
+        subtitle="可切换自然年 / 季节年 · 支持最近5年"
+        action={<YearTypeSelector yearType={yearType} setYearType={setYearType} year={year} setYear={setYear} />}
       >
-        <KpiRow cards={[
-          { title: "年度销售额", value: fmtMoney(yearSummary?.salesAmount), subtitle: `${yearSummary?.orderCount} 单 · ${yearSummary?.visitors} 访客`, accent: "#0071E3" },
-          { title: "年度净销售额", value: fmtMoney(yearSummary?.netSales), subtitle: `退款率 ${fmtPct(yearSummary?.refundRate)}`, accent: "#34C759" },
-          { title: "年度投产比", value: (yearSummary?.roi || 0).toFixed(2), subtitle: `推广 ${fmtMoney(yearSummary?.promotionTotal)}`, accent: "#AF52DE" },
-          { title: "年度推广占比", value: fmtPct(yearSummary?.promotionRate), subtitle: `转化率 ${fmtPct(yearSummary?.conversionRate)}`, accent: "#FF3B30" },
-        ]} />
+        <DraggableKpiGrid items={overviewItems} storageKey="analytics:yearly:overview" columns={5} />
       </SectionCard>
-
-      <SectionCard title={`${yearLabel}累积指标`} subtitle="累计数据 · 含同比">
-        <div className="grid grid-cols-2 md:grid-cols-3 lg:grid-cols-4 gap-3">
-          <CumItem label="累积销售额" value={fmtMoney(cumulative?.cumulativeSales)} color="#0071E3" />
-          <CumItem label="累积退款" value={fmtMoney(cumulative?.cumulativeRefund)} color="#FF9500" />
-          <CumItem label="累积净销售额" value={fmtMoney(cumulative?.cumulativeNetSales)} color="#34C759" />
-          <CumItem label="累积推广费" value={fmtMoney(cumulative?.cumulativePromotion)} color="#AF52DE" />
-          <CumItem label="累积退款率" value={fmtPct(cumulative?.cumulativeRefundRate)} color="#FF9500" />
-          <CumItem label="累积推广占比" value={fmtPct(cumulative?.cumulativePromotionRate)} color="#0071E3" />
-          <CumItem label="累积净推广费率" value={fmtPct(cumulative?.cumulativeNetPromotionRate)} color="#FF3B30" />
-          <CumItem
-            label="同比去年（销售）"
-            value={`${(cumulative?.yoyGrowth || 0) > 0 ? "+" : ""}${((cumulative?.yoyGrowth || 0) * 100).toFixed(1)}%`}
-            color={(cumulative?.yoyGrowth || 0) >= 0 ? "#34C759" : "#FF3B30"}
-          />
-        </div>
+      <SectionCard title={`${yearLabel}累积指标`} subtitle="年度累计 · 可拖拽排序">
+        <DraggableKpiGrid items={cumulativeItems} storageKey="analytics:yearly:cumulative" columns={4} />
       </SectionCard>
-
-      <SectionCard title="月度趋势" subtitle="按月聚合的销售/净销售/推广对比">
-        <div className="h-[320px]">
-          <ResponsiveContainer width="100%" height="100%">
-            <BarChart data={Object.entries(data?.monthlyAgg || {}).map(([k, v]: any) => ({
-              month: k,
-              销售额: Math.round(v.sales),
-              净销售额: Math.round(v.netSales),
-              推广: Math.round(v.promotion),
-            }))}>
-              <CartesianGrid strokeDasharray="3 3" stroke="#F2F2F7" />
-              <XAxis dataKey="month" stroke="#6E6E73" fontSize={11} tickLine={false} />
-              <YAxis stroke="#6E6E73" fontSize={11} tickLine={false} axisLine={false} />
-              <Tooltip contentStyle={{ background: "#1D1D1F", border: "none", borderRadius: 8, color: "#fff", fontSize: 12 }} formatter={(v: any) => `¥${v.toLocaleString()}`} />
-              <Legend wrapperStyle={{ fontSize: 12 }} />
-              <Bar dataKey="销售额" fill="#0071E3" radius={[4, 4, 0, 0]} />
-              <Bar dataKey="净销售额" fill="#34C759" radius={[4, 4, 0, 0]} />
-              <Bar dataKey="推广" fill="#FF9500" radius={[4, 4, 0, 0]} />
-            </BarChart>
-          </ResponsiveContainer>
-        </div>
-      </SectionCard>
-    </div>
-  );
-}
-
-function CumItem({ label, value, color }: { label: string; value: string; color: string }) {
-  return (
-    <div className="rounded-lg border border-border/60 p-3 bg-[#F8F8FA]">
-      <p className="text-xs text-muted-foreground">{label}</p>
-      <p className="text-lg font-bold mt-1" style={{ color }}>{value}</p>
     </div>
   );
 }

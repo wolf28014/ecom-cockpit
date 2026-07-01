@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from "next/server";
-import { AnalyticsService, StoreFilter } from "@/lib/analytics";
+import { AnalyticsService, StoreFilter, getNaturalYearRange, getSeasonalYearRange } from "@/lib/analytics";
 import { getCurrentUserStoreIds } from "@/lib/auth";
+import { db } from "@/lib/db";
 
 export async function GET(req: NextRequest) {
   const userStoreIds = await getCurrentUserStoreIds();
@@ -11,7 +12,7 @@ export async function GET(req: NextRequest) {
   const storeIdsParam = req.nextUrl.searchParams.get("storeIds");
   const singleStoreId = req.nextUrl.searchParams.get("storeId");
 
-  // 解析店铺筛选（必须在用户店铺范围内）
+  // 解析店铺筛选
   let storeFilter: StoreFilter;
   if (storeIdsParam) {
     const ids = storeIdsParam.split(",").filter(Boolean).filter(id => userStoreIds.includes(id));
@@ -22,16 +23,73 @@ export async function GET(req: NextRequest) {
     storeFilter = userStoreIds;
   }
 
-  const [today, week, month, trend14, trend30, trend180, skuStats, naturalYear, seasonalYear] = await Promise.all([
+  // 解析自定义日期范围
+  const startDate = req.nextUrl.searchParams.get("start");
+  const endDate = req.nextUrl.searchParams.get("end");
+
+  // 各周期数据
+  const [today, week, month, trend30] = await Promise.all([
     AnalyticsService.getTodaySummary(storeFilter),
     AnalyticsService.getWeekSummary(storeFilter),
     AnalyticsService.getMonthSummary(storeFilter),
-    AnalyticsService.getTrend(14, storeFilter),
     AnalyticsService.getTrend(30, storeFilter),
-    AnalyticsService.getTrend(180, storeFilter),
-    AnalyticsService.getSkuStats(30, storeFilter),
+  ]);
+
+  // 自定义日期范围数据
+  let customSummary = null;
+  let customCumulative = null;
+  if (startDate && endDate) {
+    const start = new Date(startDate);
+    const end = new Date(endDate);
+    start.setHours(0, 0, 0, 0);
+    end.setHours(23, 59, 59, 999);
+
+    customSummary = await AnalyticsService.getCustomSummary(start, end, storeFilter);
+
+    // 计算自定义范围的累积指标
+    const records = await db.dailyRecord.findMany({
+      where: {
+        ...(typeof storeFilter === "string" ? { storeId: storeFilter } : {}),
+        ...(Array.isArray(storeFilter) ? { storeId: { in: storeFilter } } : {}),
+        recordDate: { gte: start, lte: end },
+      },
+    });
+
+    const cumSales = records.reduce((a, r) => a + r.salesAmount, 0);
+    const cumRefund = records.reduce((a, r) => a + r.refundAmount, 0);
+    const cumPromotion = records.reduce((a, r) => a + (r.promotionManualTotal ?? r.promotionTotal), 0);
+    const cumNetSales = cumSales - cumRefund;
+
+    customCumulative = {
+      cumulativeSales: Math.round(cumSales * 100) / 100,
+      cumulativeRefund: Math.round(cumRefund * 100) / 100,
+      cumulativeNetSales: Math.round(cumNetSales * 100) / 100,
+      cumulativePromotion: Math.round(cumPromotion * 100) / 100,
+      cumulativeRefundRate: cumSales > 0 ? Math.round(cumRefund / cumSales * 10000) / 10000 : 0,
+      cumulativePromotionRate: cumSales > 0 ? Math.round(cumPromotion / cumSales * 10000) / 10000 : 0,
+      cumulativeNetPromotionRate: cumNetSales > 0 ? Math.round(cumPromotion / cumNetSales * 10000) / 10000 : 0,
+    };
+
+    // 同比去年
+    const lastStart = new Date(start); lastStart.setFullYear(lastStart.getFullYear() - 1);
+    const lastEnd = new Date(end); lastEnd.setFullYear(lastEnd.getFullYear() - 1);
+    const lastYearRecords = await db.dailyRecord.findMany({
+      where: {
+        ...(typeof storeFilter === "string" ? { storeId: storeFilter } : {}),
+        ...(Array.isArray(storeFilter) ? { storeId: { in: storeFilter } } : {}),
+        recordDate: { gte: lastStart, lte: lastEnd },
+      },
+    });
+    const lastYearSales = lastYearRecords.reduce((a, r) => a + r.salesAmount, 0);
+    customCumulative.yoyGrowth = lastYearSales > 0 ? Math.round((cumSales - lastYearSales) / lastYearSales * 10000) / 10000 : 0;
+  }
+
+  // 年度数据
+  const [naturalYear, seasonalYear, naturalCumulative, seasonalCumulative] = await Promise.all([
     AnalyticsService.getNaturalYearSummary(storeFilter),
     AnalyticsService.getSeasonalYearSummary(storeFilter),
+    AnalyticsService.getCumulativeStats(storeFilter, "natural"),
+    AnalyticsService.getCumulativeStats(storeFilter, "seasonal"),
   ]);
 
   // 环比
@@ -40,11 +98,9 @@ export async function GET(req: NextRequest) {
   const lastWeekStart = new Date(today2); lastWeekStart.setDate(lastWeekStart.getDate() - today2.getDay() - 7);
   const lastWeekEnd = new Date(lastWeekStart); lastWeekEnd.setDate(lastWeekEnd.getDate() + 6);
 
-  const [yesterdaySum, lastWeekSum, naturalCumulative, seasonalCumulative] = await Promise.all([
+  const [yesterdaySum, lastWeekSum] = await Promise.all([
     AnalyticsService.getCustomSummary(yesterday, yesterday, storeFilter),
     AnalyticsService.getCustomSummary(lastWeekStart, lastWeekEnd, storeFilter),
-    AnalyticsService.getCumulativeStats(storeFilter, "natural"),
-    AnalyticsService.getCumulativeStats(storeFilter, "seasonal"),
   ]);
 
   const dailyChange = {
@@ -56,23 +112,13 @@ export async function GET(req: NextRequest) {
     netSales: lastWeekSum.netSales !== 0 ? (week.netSales - lastWeekSum.netSales) / Math.abs(lastWeekSum.netSales) : 0,
   };
 
-  // 年度月度聚合
-  const monthlyAgg: Record<string, { sales: number; netSales: number; promotion: number }> = {};
-  for (const p of trend180) {
-    const monthKey = p.date.slice(0, 7);
-    if (!monthlyAgg[monthKey]) monthlyAgg[monthKey] = { sales: 0, netSales: 0, promotion: 0 };
-    monthlyAgg[monthKey].sales += p.sales;
-    monthlyAgg[monthKey].netSales += p.netSales;
-    monthlyAgg[monthKey].promotion += p.promotion;
-  }
-
   return NextResponse.json({
     today, week, month,
     naturalYear, seasonalYear,
     naturalCumulative, seasonalCumulative,
+    customSummary, customCumulative,
     dailyChange, weeklyChange,
-    trend14, trend30,
-    monthlyAgg,
-    skuTop5: skuStats.slice(0, 5),
+    trend30,
+    customRange: { start: startDate, end: endDate },
   });
 }
