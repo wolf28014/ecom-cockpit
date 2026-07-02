@@ -60,7 +60,7 @@ export function DashboardPage() {
       <div>
         <h2 className="text-sm font-semibold text-muted-foreground mb-3 px-1">今日概览</h2>
         <KpiRow cards={[
-          { title: "今日销售额", value: fmtMoney(today?.salesAmount || 0), subtitle: `${today?.orderCount || 0} 单 · ${today?.visitors || 0} 访客`, trend: changes.sales, trendLabel: "环比" },
+          { title: "今日销售额", value: fmtMoney(today?.salesAmount || 0), subtitle: `${today?.orderCount || 0} 单 · ${today?.visitors || 0} 访客数`, trend: changes.sales, trendLabel: "环比" },
           { title: "今日退款", value: fmtMoney(today?.refundAmount || 0), subtitle: `退款率 ${fmtPct(today?.refundRate || 0)}`, trend: changes.refund, trendLabel: "环比", accent: "#FF9500" },
           { title: "今日净销售额", value: fmtMoney(today?.netSales || 0), subtitle: `销售 - 退款`, trend: changes.netSales, trendLabel: "环比", accent: "#34C759" },
           { title: "今日投产比", value: (today?.roi || 0).toFixed(2), subtitle: `推广 ${fmtMoney(today?.promotionTotal || 0)}`, accent: "#0071E3" },

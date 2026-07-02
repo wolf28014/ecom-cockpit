@@ -208,7 +208,7 @@ function DailyTab() {
 
       <div className="grid grid-cols-1 lg:grid-cols-3 gap-4">
         {/* 基础销售数据 */}
-        <SectionCard title="基础销售数据" subtitle="销售额 / 订单 / 退款 / 访客">
+        <SectionCard title="基础销售数据" subtitle="销售额 / 订单 / 退款 / 访客数">
           <div className="space-y-3">
             <div>
               <Label className="text-xs">销售额</Label>

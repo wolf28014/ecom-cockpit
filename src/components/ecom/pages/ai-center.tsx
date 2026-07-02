@@ -52,7 +52,7 @@ function buildReportPrompt(reportType: string, data: any): string {
 - 销售额：¥${today.salesAmount?.toLocaleString() || 0}
 - 净销售额：¥${today.netSales?.toLocaleString() || 0}
 - 退款：¥${today.refundAmount?.toLocaleString() || 0}（退款率 ${(today.refundRate * 100).toFixed(1)}%）
-- 订单：${today.orderCount || 0} 单 / 访客 ${today.visitors || 0} 人
+- 订单：${today.orderCount || 0} 单 / 访客数 ${today.visitors || 0} 人
 - 推广费：¥${today.promotionTotal?.toLocaleString() || 0}（占比 ${(today.promotionRate * 100).toFixed(1)}%）
 - 投产比：${today.roi?.toFixed(2) || 0}
 - 转化率：${(today.conversionRate * 100).toFixed(2)}%
@@ -83,7 +83,7 @@ function buildDataContext(data: any): string {
 - 销售额：¥${today.salesAmount?.toLocaleString() || 0}
 - 净销售额：¥${today.netSales?.toLocaleString() || 0}
 - 退款：¥${today.refundAmount?.toLocaleString() || 0}（退款率 ${(today.refundRate * 100).toFixed(1)}%）
-- 订单：${today.orderCount || 0} 单 / 访客 ${today.visitors || 0} 人
+- 订单：${today.orderCount || 0} 单 / 访客数 ${today.visitors || 0} 人
 - 推广费：¥${today.promotionTotal?.toLocaleString() || 0}（占比 ${(today.promotionRate * 100).toFixed(1)}%）
 - 投产比：${today.roi?.toFixed(2) || 0}
 - 转化率：${(today.conversionRate * 100).toFixed(2)}%

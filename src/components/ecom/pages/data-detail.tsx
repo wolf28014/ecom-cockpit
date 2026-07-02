@@ -135,7 +135,7 @@ function DailyTable({ data, fmt, pct }: any) {
     { key: "orders", label: "订单", cum: false },
     { key: "refund", label: "退款", cum: false },
     { key: "promotion", label: "推广费", cum: false },
-    { key: "visitors", label: "访客", cum: false },
+    { key: "visitors", label: "访客数", cum: false },
     { key: "netSales", label: "净销售", cum: false },
     { key: "refundRate", label: "退款率", cum: false },
     { key: "promotionRate", label: "推广占比", cum: false },
@@ -217,7 +217,7 @@ function MonthlyTable({ data, fmt, fmt0, pct }: any) {
                 <th className="px-3 py-2 text-right font-semibold">退款</th>
                 <th className="px-3 py-2 text-right font-semibold">净销售</th>
                 <th className="px-3 py-2 text-right font-semibold">推广费</th>
-                <th className="px-3 py-2 text-right font-semibold">访客</th>
+                <th className="px-3 py-2 text-right font-semibold">访客数</th>
                 <th className="px-3 py-2 text-right font-semibold">退款率</th>
                 <th className="px-3 py-2 text-right font-semibold">推广占比</th>
                 <th className="px-3 py-2 text-right font-semibold">投产比</th>
