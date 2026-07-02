@@ -348,7 +348,7 @@ export function DataImportPage() {
         <div className="space-y-2 text-sm text-muted-foreground">
           <p>1. 推广费将统一归类为「通用推广」，如需细分请使用「数据录入」页手动录入；</p>
           <p>2. 日期格式支持 yyyy-mm-dd、yyyy/mm/dd、yyyy.mm.dd 及 Excel 日期序列；</p>
-          <p>3. 同一店铺同一日期数据将自动覆盖，请确认后再导入；</p>
+          <p>3. <span className="text-[#0071E3] font-medium">同一店铺同一日期数据将自动覆盖</span>，重复导入不会产生重复数据，直接更新为最新值；</p>
           <p>4. 数值字段留空将视为 0；</p>
           <p>5. 支持的模板：通用模板（推荐）/ 生意参谋 / 直通车 / 万相台 / 财务模板。</p>
         </div>

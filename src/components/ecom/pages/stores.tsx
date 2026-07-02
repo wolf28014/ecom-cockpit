@@ -48,6 +48,7 @@ interface StoreItem {
   contact?: string | null;
   note?: string | null;
   isActive: boolean;
+  goodsCostRatio?: number;
   createdAt: string;
   platformLabel?: string;
   dailyRecordsCount?: number;
@@ -55,7 +56,7 @@ interface StoreItem {
 }
 
 const emptyForm = {
-  id: "", name: "", platform: "taobao", shopUrl: "", shopId: "", contact: "", isActive: true, note: "",
+  id: "", name: "", platform: "taobao", shopUrl: "", shopId: "", contact: "", isActive: true, note: "", goodsCostRatio: 63,
 };
 
 export function StoresPage() {
@@ -114,6 +115,7 @@ export function StoresPage() {
       id: s.id, name: s.name, platform: s.platform,
       shopUrl: s.shopUrl || "", shopId: s.shopId || "",
       contact: s.contact || "", isActive: s.isActive, note: s.note || "",
+      goodsCostRatio: s.goodsCostRatio ? Math.round(s.goodsCostRatio * 100) : 63,
     });
     setDialogOpen(true);
   };
@@ -130,6 +132,7 @@ export function StoresPage() {
       contact: form.contact || null,
       note: form.note || null,
       isActive: form.isActive,
+      goodsCostRatio: (form.goodsCostRatio || 63) / 100, // 百分比转小数
     };
     try {
       const res = await fetch("/api/stores", {
@@ -322,6 +325,25 @@ export function StoresPage() {
             <div className="space-y-2">
               <Label>备注</Label>
               <Textarea value={form.note} onChange={e => setForm({ ...form, note: e.target.value })} rows={2} placeholder="店铺说明、特殊经营事项" />
+            </div>
+            <div className="space-y-2">
+              <Label>货品成本比例（占销售额百分比）</Label>
+              <div className="flex items-center gap-2">
+                <Input
+                  type="number"
+                  value={form.goodsCostRatio}
+                  onChange={e => setForm({ ...form, goodsCostRatio: Number(e.target.value) })}
+                  min={0}
+                  max={100}
+                  step={0.1}
+                  placeholder="63"
+                  className="w-24"
+                />
+                <span className="text-sm text-muted-foreground">%</span>
+                <p className="text-xs text-muted-foreground flex-1">
+                  销售额 × 此比例 = 货品成本。例：销售额 1000 × 63% = 货品成本 630
+                </p>
+              </div>
             </div>
             <div className="flex items-center justify-between rounded-lg border p-3">
               <div>

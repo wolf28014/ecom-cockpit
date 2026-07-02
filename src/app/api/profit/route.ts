@@ -43,6 +43,13 @@ export async function GET(req: NextRequest) {
 
   const today = new Date();
 
+  // 查各店铺的货品成本比例
+  const stores = await db.store.findMany({
+    where: { id: { in: storeIdArray } },
+    select: { id: true, goodsCostRatio: true },
+  });
+  const storeRatioMap = new Map(stores.map(s => [s.id, s.goodsCostRatio || 0.63]));
+
   // 辅助：查指定日期范围的每日数据 + 对应月份的月度成本
   async function getProfitData(start: Date, end: Date) {
     // 1. 查每日经营数据
@@ -62,13 +69,29 @@ export async function GET(req: NextRequest) {
     const monthlyCosts = await db.monthlyCost.findMany({
       where: {
         storeId: { in: storeIdArray },
-        // 年月范围
         OR: buildMonthFilter(costStart, costEnd),
       },
     });
 
-    // 3. 汇总成本
-    const goodsCost = monthlyCosts.reduce((a, c) => a + c.goodsCost, 0);
+    // 3. 货品成本：优先用月度成本中的实际值，无月度成本时按店铺比例自动算
+    let goodsCost = monthlyCosts.reduce((a, c) => a + c.goodsCost, 0);
+    let goodsCostSource = "monthly"; // 来源：monthly=月度成本 actual=按比例
+
+    if (goodsCost === 0 && sales > 0) {
+      // 没有月度成本数据，按各店铺的 goodsCostRatio 自动算
+      // 按店铺分组计算销售额，再乘以各自比例
+      const salesByStore = new Map<string, number>();
+      for (const r of records) {
+        salesByStore.set(r.storeId, (salesByStore.get(r.storeId) || 0) + r.salesAmount);
+      }
+      for (const [storeId, storeSales] of salesByStore) {
+        const ratio = storeRatioMap.get(storeId) || 0.63;
+        goodsCost += storeSales * ratio;
+      }
+      goodsCostSource = "ratio";
+    }
+
+    // 4. 汇总其他成本
     const redPacket = monthlyCosts.reduce((a, c) => a + c.redPacket, 0);
     const labor = monthlyCosts.reduce((a, c) => a + c.labor, 0);
     const other = monthlyCosts.reduce((a, c) => a + c.other, 0);
@@ -81,13 +104,18 @@ export async function GET(req: NextRequest) {
     const charity = monthlyCosts.reduce((a, c) => a + c.charity, 0);
     const quickPaymentFee = monthlyCosts.reduce((a, c) => a + c.quickPaymentFee, 0);
     const marketingPlatform = monthlyCosts.reduce((a, c) => a + c.marketingPlatform, 0);
-    const totalCost = monthlyCosts.reduce((a, c) => a + c.totalCost, 0);
+    const monthlyTotalCost = monthlyCosts.reduce((a, c) => a + c.totalCost, 0);
 
-    // 4. 计算利润
+    // 如果货品成本是按比例算的，总成本 = 货品成本(比例) + 其他月度成本(不含货品)
+    const totalCost = goodsCostSource === "ratio"
+      ? goodsCost + (monthlyTotalCost - monthlyCosts.reduce((a, c) => a + c.goodsCost, 0))
+      : monthlyTotalCost;
+
+    // 5. 计算利润
     const netSales = sales - refund;
-    const grossProfit = netSales - goodsCost; // 毛利润 = 净销售 - 货品成本
-    const otherCosts = totalCost - goodsCost; // 非货品成本
-    const netProfit = netSales - totalCost - promo; // 净利润 = 净销售 - 总成本 - 推广
+    const grossProfit = netSales - goodsCost;
+    const otherCosts = totalCost - goodsCost;
+    const netProfit = netSales - totalCost - promo;
     const profitRate = netSales > 0 ? netProfit / netSales : 0;
     const roi = promo > 0 ? sales / promo : 0;
 
@@ -121,6 +149,8 @@ export async function GET(req: NextRequest) {
       grossProfit: Math.round(grossProfit * 100) / 100,
       netProfit: Math.round(netProfit * 100) / 100,
       profitRate: Math.round(profitRate * 10000) / 10000,
+      // 货品成本来源
+      goodsCostSource, // "monthly"=月度实际值 "ratio"=按比例自动算
     };
   }
 

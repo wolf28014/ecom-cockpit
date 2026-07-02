@@ -157,7 +157,7 @@ function ProfitDetail({ data, title, dateLabel, dateSelector, fmt, fmt0, pct }: 
             <Row label="- 退款金额" value={fmt(data.refundAmount)} color="#FF9500" />
             <Row label="= 净销售额" value={fmt(data.netSales)} bold color="#0071E3" />
             <div className="border-t my-1" />
-            <Row label="- 货品成本" value={fmt(data.goodsCost)} color="#FF3B30" />
+            <Row label="- 货品成本" value={fmt(data.goodsCost) + (data.goodsCostSource === "ratio" ? "（按比例）" : "")} color="#FF3B30" />
             <Row label="= 毛利润" value={fmt(data.grossProfit)} bold color="#34C759" />
             <div className="border-t my-1" />
             <Row label="- 推广费用" value={fmt(data.promotionTotal)} color="#0071E3" />

@@ -25,17 +25,18 @@ model User {
 
 // ============== 店铺 ==============
 model Store {
-  id        String   @id @default(cuid())
-  userId    String   // 所属用户
-  name      String
-  platform  String   // taobao | tmall | douyin | pinduoduo
-  shopUrl   String?
-  shopId    String?
-  contact   String?
-  note      String?
-  isActive  Boolean  @default(true)
-  createdAt DateTime @default(now())
-  updatedAt DateTime @updatedAt
+  id            String   @id @default(cuid())
+  userId        String   // 所属用户
+  name          String
+  platform      String   // taobao | tmall | douyin | pinduoduo
+  shopUrl       String?
+  shopId        String?
+  contact       String?
+  note          String?
+  isActive      Boolean  @default(true)
+  goodsCostRatio Float   @default(0.63) // 货品成本占销售额的比例（默认63%）
+  createdAt     DateTime @default(now())
+  updatedAt     DateTime @updatedAt
 
   user         User       @relation(fields: [userId], references: [id], onDelete: Cascade)
   dailyRecords DailyRecord[]
