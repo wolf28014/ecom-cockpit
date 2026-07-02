@@ -1,13 +1,19 @@
 /**
  * 浏览器 localStorage 缓存工具
- * 用于缓存 API 响应，减少加载时间
  *
  * 缓存策略：
- * - 默认 5 分钟过期
- * - 支持手动清除
- * - 数据变化后自动失效
+ * - 历史数据（过去日期）：24 小时 TTL — 打开过就缓存，下次不用加载
+ * - 实时数据（今日/本周/本月）：30 秒 TTL — 短缓存保证新鲜度
+ * - 数据变化后自动清除（录入数据时调用清除）
  */
 
+// 短缓存：用于今日/本周/本月等实时数据
+const SHORT_TTL = 30 * 1000; // 30 秒
+
+// 长缓存：用于历史数据（过去的日期/月份/年份）
+const LONG_TTL = 24 * 60 * 60 * 1000; // 24 小时
+
+// 默认 TTL（向后兼容）
 const DEFAULT_TTL = 5 * 60 * 1000; // 5 分钟
 
 interface CacheItem<T> {
@@ -29,7 +35,7 @@ export function getCached<T>(key: string, ttl: number = DEFAULT_TTL): T | null {
     if (!raw) return null;
     const item: CacheItem<T> = JSON.parse(raw);
     const now = Date.now();
-    if (now - item.timestamp > ttl) {
+    if (now - item.timestamp > (item.ttl || ttl)) {
       // 已过期，清除
       localStorage.removeItem(key);
       return null;
@@ -42,6 +48,9 @@ export function getCached<T>(key: string, ttl: number = DEFAULT_TTL): T | null {
 
 /**
  * 写入缓存
+ * @param key 缓存键
+ * @param data 数据
+ * @param ttl 过期时间（毫秒），默认 5 分钟
  */
 export function setCached<T>(key: string, data: T, ttl: number = DEFAULT_TTL): void {
   if (typeof window === "undefined") return;
@@ -56,6 +65,20 @@ export function setCached<T>(key: string, data: T, ttl: number = DEFAULT_TTL): v
     // localStorage 满了或被禁用，忽略
     console.warn("Cache write failed:", e);
   }
+}
+
+/**
+ * 写入长缓存（24小时，用于历史数据）
+ */
+export function setCachedLong<T>(key: string, data: T): void {
+  setCached(key, data, LONG_TTL);
+}
+
+/**
+ * 读取长缓存（24小时，用于历史数据）
+ */
+export function getCachedLong<T>(key: string): T | null {
+  return getCached<T>(key, LONG_TTL);
 }
 
 /**
@@ -90,45 +113,5 @@ export function clearAllCache(): void {
   clearCacheByPrefix("ecom:");
 }
 
-/**
- * 带缓存的 fetch
- * - 优先返回缓存（即使过期，先显示，后台再刷新）
- * - 然后后台请求最新数据
- *
- * @param url 请求 URL
- * @param cacheKey 缓存键（默认等于 url）
- * @param ttl 缓存 TTL
- * @param onData 有新数据时回调
- * @returns 返回缓存数据（如有），同时后台请求新数据
- */
-export async function fetchWithCache<T>(
-  url: string,
-  cacheKey?: string,
-  ttl: number = DEFAULT_TTL,
-  onData?: (data: T, fromCache: boolean) => void
-): Promise<T | null> {
-  const key = cacheKey || `ecom:${url}`;
-  const cached = getCached<T>(key, ttl);
-
-  // 后台请求最新数据
-  try {
-    const res = await fetch(url);
-    if (res.ok) {
-      const data = await res.json() as T;
-      setCached(key, data, ttl);
-      onData?.(data, false);
-      return data;
-    }
-  } catch (e) {
-    // 请求失败，如果有缓存就用缓存
-    if (cached && onData) {
-      onData(cached, true);
-    }
-  }
-
-  // 如果有缓存但请求失败，返回缓存
-  if (cached && onData) {
-    onData(cached, true);
-  }
-  return cached;
-}
+// 导出 TTL 常量供外部使用
+export { SHORT_TTL, LONG_TTL, DEFAULT_TTL };

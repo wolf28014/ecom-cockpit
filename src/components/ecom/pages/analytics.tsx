@@ -29,7 +29,7 @@ export function AnalyticsPage() {
   const sidParam = storeIds.length > 0 ? `&storeIds=${storeIds.join(",")}` : "";
   const url = `/api/analytics?${sidParam}&day=${dayDate}&monthYear=${monthYear}&monthMonth=${monthMonth}&naturalYear=${naturalYear}&seasonalYear=${seasonalYear}`;
   const cacheKey = `ecom:analytics2:${storeIds.join(",") || "all"}:${dayDate}:${monthYear}-${monthMonth}:N${naturalYear}:S${seasonalYear}`;
-  const { data, loading, refresh } = useCachedFetch(url, cacheKey);
+  const { data, loading, refresh } = useCachedFetch(url, cacheKey, true, true); // 历史数据用长缓存
 
   const fmtMoney0 = (v: number) => `¥${(v || 0).toLocaleString(undefined, { maximumFractionDigits: 0 })}`;
   const fmtPct = (v: number) => v === 0 || !v ? "0.00%" : `${(v * 100).toFixed(2)}%`;

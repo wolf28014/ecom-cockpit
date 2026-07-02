@@ -39,7 +39,7 @@ export function DataDetailPage() {
     cacheKey = `ecom:detail:cost:${storeIds.join(",")}`;
   }
 
-  const { data, loading, refresh } = useCachedFetch(url, cacheKey);
+  const { data, loading, refresh } = useCachedFetch(url, cacheKey, true, true); // 历史数据用长缓存
 
   const fmt = (v: number) => v?.toLocaleString(undefined, { maximumFractionDigits: 2 }) || "0";
   const fmt0 = (v: number) => `¥${(v || 0).toLocaleString(undefined, { maximumFractionDigits: 0 })}`;

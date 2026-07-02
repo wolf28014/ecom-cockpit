@@ -1,31 +1,28 @@
 "use client";
 
 import { useState, useEffect, useCallback } from "react";
-import { getCached, setCached, clearCacheByPrefix } from "@/lib/cache";
+import { getCached, setCached, clearCacheByPrefix, LONG_TTL, SHORT_TTL } from "@/lib/cache";
 
 /**
  * 带缓存的数据获取 Hook
  *
- * 功能：
- * - 首次加载显示 loading
- * - 再次访问优先用缓存秒显示，后台静默刷新
- * - 支持手动刷新（跳过缓存）
- * - 支持 key 变化自动重新加载
- *
  * @param url 请求 URL
- * @param cacheKey 缓存键（默认等于 url）
- * @param enabled 是否启用（false 时不加载）
+ * @param cacheKey 缓存键
+ * @param enabled 是否启用
+ * @param longCache 是否使用长缓存（24小时，用于历史数据）
  * @returns { data, loading, refresh }
  */
 export function useCachedFetch<T = any>(
   url: string | null,
   cacheKey?: string,
-  enabled: boolean = true
+  enabled: boolean = true,
+  longCache: boolean = false
 ): { data: T | null; loading: boolean; refresh: () => void } {
   const [data, setData] = useState<T | null>(null);
   const [loading, setLoading] = useState(true);
 
   const key = cacheKey || `ecom:${url}`;
+  const ttl = longCache ? LONG_TTL : SHORT_TTL;
 
   const loadData = useCallback((force = false) => {
     if (!url || !enabled) {
@@ -33,72 +30,76 @@ export function useCachedFetch<T = any>(
       return;
     }
 
-    // 1. 先尝试缓存（不显示 loading，直接秒显示）
+    // 1. 先尝试精确缓存（不显示 loading，直接秒显示）
     if (!force) {
-      const cached = getCached<T>(key);
+      const cached = getCached<T>(key, ttl);
       if (cached) {
         setData(cached);
         setLoading(false);
-        // 后台静默刷新（不显示 loading）
+        // 长缓存不后台刷新（历史数据不会变）
+        if (!longCache) {
+          fetch(url)
+            .then(r => r.json())
+            .then(d => {
+              if (d && !d.error) {
+                setData(d);
+                setCached(key, d, ttl);
+              }
+            })
+            .catch(() => {});
+        }
+        return;
+      }
+    }
+
+    // 2. 无精确缓存：查找同前缀的旧缓存（日期不同但有旧数据）
+    if (!force) {
+      const prefix = key.split(":").slice(0, -1).join(":");
+      const allKeys = Object.keys(localStorage);
+      let oldData: T | null = null;
+      for (const k of allKeys) {
+        if (k.startsWith(prefix + ":") && k !== key) {
+          try {
+            const item = JSON.parse(localStorage.getItem(k) || "");
+            if (item?.data && Date.now() - item.timestamp < (longCache ? LONG_TTL : 30 * 60 * 1000)) {
+              oldData = item.data;
+              break;
+            }
+          } catch {}
+        }
+      }
+
+      if (oldData) {
+        setData(oldData);
+        setLoading(false);
+        // 后台加载新数据
         fetch(url)
           .then(r => r.json())
           .then(d => {
             if (d && !d.error) {
               setData(d);
-              setCached(key, d);
+              setCached(key, d, ttl);
+              setLoading(false);
             }
           })
-          .catch(() => {});
+          .catch(() => setLoading(false));
         return;
       }
     }
 
-    // 2. 无缓存：先检查是否有旧版本缓存（key 前缀相同但日期不同）
-    //    如果有，先显示旧数据（不白屏），再后台加载新数据
-    const prefix = key.split(":").slice(0, -1).join(":");
-    const allKeys = Object.keys(localStorage);
-    let oldData: T | null = null;
-    for (const k of allKeys) {
-      if (k.startsWith(prefix + ":") && k !== key) {
-        try {
-          const item = JSON.parse(localStorage.getItem(k) || "");
-          if (item?.data && Date.now() - item.timestamp < 30 * 60 * 1000) {
-            oldData = item.data;
-            break;
-          }
-        } catch {}
-      }
-    }
-
-    if (oldData && !force) {
-      setData(oldData);
-      setLoading(false);
-      // 后台加载新数据，加载完替换
-      fetch(url)
-        .then(r => r.json())
-        .then(d => {
-          if (d && !d.error) {
-            setData(d);
-            setCached(key, d);
-            setLoading(false);
-          }
-        })
-        .catch(() => setLoading(false));
-    } else {
-      // 3. 完全无缓存：显示 loading 并请求
-      setLoading(true);
-      fetch(url)
-        .then(r => r.json())
-        .then(d => {
-          if (d && !d.error) {
-            setData(d);
-            setCached(key, d);
-          }
-          setLoading(false);
-        })
-        .catch(() => setLoading(false));
-    }
-  }, [url, key, enabled]);
+    // 3. 完全无缓存：显示 loading 并请求
+    setLoading(true);
+    fetch(url)
+      .then(r => r.json())
+      .then(d => {
+        if (d && !d.error) {
+          setData(d);
+          setCached(key, d, ttl);
+        }
+        setLoading(false);
+      })
+      .catch(() => setLoading(false));
+  }, [url, key, enabled, longCache, ttl]);
 
   useEffect(() => {
     // eslint-disable-next-line react-hooks/set-state-in-effect

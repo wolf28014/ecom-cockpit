@@ -12,6 +12,7 @@ import { Button } from "@/components/ui/button";
 import { Textarea } from "@/components/ui/textarea";
 import { ToggleGroup, ToggleGroupItem } from "@/components/ui/toggle-group";
 import { toast } from "sonner";
+import { clearCacheByPrefix } from "@/lib/cache";
 
 const PROMOTION_FIELDS = [
   "货品全站推广",
@@ -162,10 +163,12 @@ function DailyTab() {
             description: `净销售额 ${fmt(netSales)} · 投产比 ${roi.toFixed(2)}`,
           });
         }
-        // 清除 dashboard 缓存，让首页下次加载新数据
+        // 清除所有前端缓存，让下次访问拿最新数据
         try {
-          localStorage.removeItem("ecom:dashboard:all");
-          localStorage.removeItem(`ecom:dashboard:${storeId}`);
+          clearCacheByPrefix("ecom:dashboard:");
+          clearCacheByPrefix("ecom:analytics");
+          clearCacheByPrefix("ecom:profit:");
+          clearCacheByPrefix("ecom:detail:");
         } catch {}
       } else {
         if (!silent) toast.error("保存失败");
