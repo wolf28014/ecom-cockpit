@@ -632,6 +632,7 @@ function CostImportSection({ storeId }: { storeId: string }) {
     setImporting(true);
     try {
       let ok = 0;
+      let fail = 0;
       for (const item of costPreview) {
         const [year, month] = item.month.split("-");
         const res = await fetch("/api/monthly-cost", {
@@ -656,13 +657,23 @@ function CostImportSection({ storeId }: { storeId: string }) {
             marketingPlatform: item.marketingPlatform || 0,
           }),
         });
-        if (res.ok) ok++;
+        if (res.ok) {
+          ok++;
+        } else {
+          fail++;
+          const err = await res.json().catch(() => ({}));
+          console.error(`导入 ${item.month} 失败:`, err);
+        }
       }
-      toast.success(`成本导入完成：${ok} 个月`);
+      if (fail === 0) {
+        toast.success(`成本导入完成：${ok} 个月`);
+      } else {
+        toast.warning(`导入完成：成功 ${ok}，失败 ${fail}`);
+      }
       setCostPreview([]);
       setCostFile(null);
-    } catch {
-      toast.error("导入失败");
+    } catch (e: any) {
+      toast.error("导入失败", { description: e.message?.slice(0, 100) });
     } finally {
       setImporting(false);
     }
