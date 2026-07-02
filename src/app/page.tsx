@@ -1,9 +1,10 @@
 'use client';
 
 import { useState, useEffect } from "react";
+import type { Dispatch, SetStateAction } from "react";
 import {
   LayoutDashboard, Store, PencilLine, UploadCloud, BarChart3, Bot,
-  Target, Package, FileText, Settings, Bell, TrendingUp, LogOut,
+  Target, Package, FileText, Settings, Bell, TrendingUp, LogOut, MoreHorizontal,
 } from "lucide-react";
 import { cn } from "@/lib/utils";
 import { Badge } from "@/components/ui/badge";
@@ -50,6 +51,11 @@ const NAV_ITEMS: NavItem[] = [
   { key: "ai-center", label: "AI 经营中心", icon: Bot, group: "ai" },
   { key: "settings", label: "系统设置", icon: Settings, group: "system" },
 ];
+
+// 移动端底部导航：5 个主 tab + 更多
+const PRIMARY_NAV_KEYS: PageKey[] = ["dashboard", "stores", "data-entry", "analytics", "ai-center"];
+const SECONDARY_NAV_ITEMS = NAV_ITEMS.filter(item => !PRIMARY_NAV_KEYS.includes(item.key));
+const PRIMARY_NAV_ITEMS = NAV_ITEMS.filter(item => PRIMARY_NAV_KEYS.includes(item.key));
 
 const GROUP_LABELS: Record<string, string> = {
   main: "经营",
@@ -128,7 +134,31 @@ export default function Home() {
     return <LoginPage onLoginSuccess={handleLoginSuccess} />;
   }
 
-  return <AppContent user={user} onLogout={handleLogout} activePage={activePage} setActivePage={setActivePage} unreadAlerts={unreadAlerts} setUnreadAlerts={setUnreadAlerts} />;
+  return (
+    <AppContent
+      user={user}
+      onLogout={handleLogout}
+      activePage={activePage}
+      setActivePage={setActivePage}
+      unreadAlerts={unreadAlerts}
+      setUnreadAlerts={setUnreadAlerts}
+    />
+  );
+}
+
+function switchPageFactory(
+  setActivePage: (p: PageKey) => void,
+  setMountedPages: Dispatch<SetStateAction<Set<PageKey>>>
+) {
+  return (key: PageKey) => {
+    setActivePage(key);
+    setMountedPages(prev => {
+      if (prev.has(key)) return prev;
+      const next = new Set(prev);
+      next.add(key);
+      return next;
+    });
+  };
 }
 
 function AppContent({
@@ -141,8 +171,12 @@ function AppContent({
   unreadAlerts: number;
   setUnreadAlerts: (n: number) => void;
 }) {
+  // 仅挂载已访问过的页面（保留状态）。首次仅挂载 dashboard。
+  const [mountedPages, setMountedPages] = useState<Set<PageKey>>(new Set(["dashboard"]));
+  const switchPage = switchPageFactory(setActivePage, setMountedPages);
   const [showAlerts, setShowAlerts] = useState(false);
   const [alertsList, setAlertsList] = useState<any[]>([]);
+  const [showMoreNav, setShowMoreNav] = useState(false);
 
   useEffect(() => {
     const loadAlerts = () => {
@@ -180,16 +214,36 @@ function AppContent({
   const renderPage = () => {
     return (
       <>
-        <div style={{ display: activePage === "dashboard" ? "block" : "none" }}><DashboardPage /></div>
-        <div style={{ display: activePage === "stores" ? "block" : "none" }}><StoresPage /></div>
-        <div style={{ display: activePage === "data-entry" ? "block" : "none" }}><DataEntryPage /></div>
-        <div style={{ display: activePage === "data-import" ? "block" : "none" }}><DataImportPage /></div>
-        <div style={{ display: activePage === "analytics" ? "block" : "none" }}><AnalyticsPage /></div>
-        <div style={{ display: activePage === "profit-center" ? "block" : "none" }}><ProfitCenterPage /></div>
-        <div style={{ display: activePage === "data-detail" ? "block" : "none" }}><DataDetailPage /></div>
-        <div style={{ display: activePage === "sku" ? "block" : "none" }}><SkuPage /></div>
-        <div style={{ display: activePage === "ai-center" ? "block" : "none" }}><AiCenterPage /></div>
-        <div style={{ display: activePage === "settings" ? "block" : "none" }}><SettingsPage /></div>
+        {mountedPages.has("dashboard") && (
+          <div style={{ display: activePage === "dashboard" ? "block" : "none" }}><DashboardPage /></div>
+        )}
+        {mountedPages.has("stores") && (
+          <div style={{ display: activePage === "stores" ? "block" : "none" }}><StoresPage /></div>
+        )}
+        {mountedPages.has("data-entry") && (
+          <div style={{ display: activePage === "data-entry" ? "block" : "none" }}><DataEntryPage /></div>
+        )}
+        {mountedPages.has("data-import") && (
+          <div style={{ display: activePage === "data-import" ? "block" : "none" }}><DataImportPage /></div>
+        )}
+        {mountedPages.has("analytics") && (
+          <div style={{ display: activePage === "analytics" ? "block" : "none" }}><AnalyticsPage /></div>
+        )}
+        {mountedPages.has("profit-center") && (
+          <div style={{ display: activePage === "profit-center" ? "block" : "none" }}><ProfitCenterPage /></div>
+        )}
+        {mountedPages.has("data-detail") && (
+          <div style={{ display: activePage === "data-detail" ? "block" : "none" }}><DataDetailPage /></div>
+        )}
+        {mountedPages.has("sku") && (
+          <div style={{ display: activePage === "sku" ? "block" : "none" }}><SkuPage /></div>
+        )}
+        {mountedPages.has("ai-center") && (
+          <div style={{ display: activePage === "ai-center" ? "block" : "none" }}><AiCenterPage /></div>
+        )}
+        {mountedPages.has("settings") && (
+          <div style={{ display: activePage === "settings" ? "block" : "none" }}><SettingsPage /></div>
+        )}
       </>
     );
   };
@@ -252,7 +306,7 @@ function AppContent({
                   return (
                     <button
                       key={item.key}
-                      onClick={() => setActivePage(item.key)}
+                      onClick={() => switchPage(item.key)}
                       className={cn(
                         "w-full flex items-center gap-2.5 px-3 py-2 rounded-lg text-sm transition-colors",
                         active
@@ -377,18 +431,18 @@ function AppContent({
         </div>
       </main>
 
-      {/* 移动端底部 Tab 栏 — 仅 lg 以下显示 */}
+      {/* 移动端底部 Tab 栏 — 仅 lg 以下显示，5 个主 tab + 更多 */}
       <nav className="lg:hidden fixed bottom-0 left-0 right-0 bg-white/90 backdrop-blur-lg border-t border-[#E5E5EA] z-40"
         style={{ paddingBottom: "env(safe-area-inset-bottom)" }}
       >
         <div className="flex items-center justify-around px-1 py-1">
-          {NAV_ITEMS.map(item => {
+          {PRIMARY_NAV_ITEMS.map(item => {
             const Icon = item.icon;
             const active = activePage === item.key;
             return (
               <button
                 key={item.key}
-                onClick={() => setActivePage(item.key)}
+                onClick={() => switchPage(item.key)}
                 className={cn(
                   "flex flex-col items-center gap-0.5 px-2 py-1.5 rounded-lg transition-colors min-w-[44px] min-h-[44px]",
                   active ? "text-[#0071E3]" : "text-muted-foreground"
@@ -399,8 +453,57 @@ function AppContent({
               </button>
             );
           })}
+          {(() => {
+            const active = SECONDARY_NAV_ITEMS.some(item => item.key === activePage);
+            return (
+              <button
+                onClick={() => setShowMoreNav(true)}
+                className={cn(
+                  "flex flex-col items-center gap-0.5 px-2 py-1.5 rounded-lg transition-colors min-w-[44px] min-h-[44px]",
+                  active ? "text-[#0071E3]" : "text-muted-foreground"
+                )}
+              >
+                <MoreHorizontal className="size-5" />
+                <span className="text-[10px] font-medium">更多</span>
+              </button>
+            );
+          })()}
         </div>
       </nav>
+
+      {/* 移动端“更多”导航对话框 */}
+      <Dialog open={showMoreNav} onOpenChange={setShowMoreNav}>
+        <DialogContent className="max-w-sm">
+          <DialogHeader>
+            <DialogTitle>更多功能</DialogTitle>
+            <DialogDescription>选择要打开的功能模块</DialogDescription>
+          </DialogHeader>
+          <div className="grid grid-cols-2 gap-2">
+            {SECONDARY_NAV_ITEMS.map(item => {
+              const Icon = item.icon;
+              const active = activePage === item.key;
+              return (
+                <button
+                  key={item.key}
+                  onClick={() => {
+                    switchPage(item.key);
+                    setShowMoreNav(false);
+                  }}
+                  className={cn(
+                    "flex items-center gap-2 px-3 py-3 rounded-lg text-sm transition-colors border",
+                    active
+                      ? "bg-[#0071E3] text-white border-[#0071E3]"
+                      : "bg-white text-[#1D1D1F] border-[#E5E5EA] hover:bg-[#F5F5F7]"
+                  )}
+                >
+                  <Icon className={cn("size-4 shrink-0", active ? "text-white" : "text-muted-foreground")} />
+                  <span className="truncate">{item.label}</span>
+                </button>
+              );
+            })}
+          </div>
+        </DialogContent>
+      </Dialog>
 
       {/* 全局导入进度浮窗 - 任何页面都可见 */}
       <ImportProgress />

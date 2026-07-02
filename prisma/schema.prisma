@@ -219,6 +219,8 @@ model Alert {
   triggeredAt DateTime @default(now())
   isRead    Boolean  @default(false)
   isResolved Boolean @default(false)
+
+  @@index([triggeredAt])
 }
 
 // ============== AI 报告 ==============
@@ -246,6 +248,8 @@ model ChatHistory {
   role      String   // user | assistant
   content   String
   createdAt DateTime @default(now())
+
+  @@index([storeId, createdAt])
 }
 // ============== 系统设置 ==============
 model Setting {

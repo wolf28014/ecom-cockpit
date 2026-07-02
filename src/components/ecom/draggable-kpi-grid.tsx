@@ -50,11 +50,11 @@ export function DraggableKpiGrid({
         // eslint-disable-next-line react-hooks/set-state-in-effect
         setOrderedItems([...sorted, ...remaining]);
       } catch {
-        // eslint-disable-next-line react-hooks/set-state-in-effect
+         
         setOrderedItems(items);
       }
     } else {
-      // eslint-disable-next-line react-hooks/set-state-in-effect
+       
       setOrderedItems(items);
     }
   }, [items, storageKey]);
@@ -78,7 +78,13 @@ export function DraggableKpiGrid({
     }
   };
 
-  const gridCols = `grid grid-cols-2 md:grid-cols-3 lg:grid-cols-${columns} xl:grid-cols-${columns + 1}`;
+  // Tailwind 无法识别动态拼接的类名，需用静态查找表
+  const gridClassMap: Record<number, string> = {
+    3: "grid grid-cols-2 md:grid-cols-3 lg:grid-cols-3 xl:grid-cols-4",
+    4: "grid grid-cols-2 md:grid-cols-3 lg:grid-cols-4 xl:grid-cols-5",
+    5: "grid grid-cols-2 md:grid-cols-3 lg:grid-cols-5 xl:grid-cols-6",
+  };
+  const gridCols = gridClassMap[columns] || gridClassMap[4];
 
   return (
     <DndContext sensors={sensors} collisionDetection={closestCenter} onDragEnd={handleDragEnd}>

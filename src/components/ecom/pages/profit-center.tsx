@@ -1,6 +1,6 @@
 "use client";
 
-import { useState } from "react";
+import { useState, useEffect } from "react";
 import { SectionCard } from "@/components/ecom/kpi";
 import { RefreshButton } from "@/components/ecom/store-selector";
 import { StoreMultiSelect } from "@/components/ecom/store-multi-select";
@@ -212,7 +212,10 @@ function ProfitTargetSection({ storeIds }: { storeIds: string[] }) {
     fetch(`/api/targets${sid}`).then(r => r.json()).then(d => { setTargets(Array.isArray(d) ? d : []); setLoading(false); }).catch(() => setLoading(false));
   };
 
-  useState(() => { load(); });
+  useEffect(() => {
+    // eslint-disable-next-line react-hooks/set-state-in-effect
+    load();
+  }, [storeIds]);
 
   const fmt0 = (v: number) => `¥${(v || 0).toLocaleString(undefined, { maximumFractionDigits: 0 })}`;
 
@@ -257,7 +260,10 @@ function CashFlowSection({ storeIds }: { storeIds: string[] }) {
     fetch(`/api/forecast?days=30${sid}`).then(r => r.json()).then(d => { setForecast(d); setLoading(false); }).catch(() => setLoading(false));
   };
 
-  useState(() => { load(); });
+  useEffect(() => {
+    // eslint-disable-next-line react-hooks/set-state-in-effect
+    load();
+  }, [storeIds]);
 
   const fmt0 = (v: number) => `¥${(v || 0).toLocaleString(undefined, { maximumFractionDigits: 0 })}`;
 
@@ -301,7 +307,7 @@ function CashFlowSection({ storeIds }: { storeIds: string[] }) {
 // ============== 日期选择器 ==============
 function MonthNav({ year, month, onChange }: any) {
   const prev = () => month === 1 ? onChange(year - 1, 12) : onChange(year, month - 1);
-  const next = () => { const now = new Date(); if (year === now.getFullYear() && month === now.getMonth() + 1) return; month === 12 ? onChange(year + 1, 1) : onChange(year, month + 1); };
+  const next = () => { const now = new Date(); if (year === now.getFullYear() && month === now.getMonth() + 1) return; if (month === 12) onChange(year + 1, 1); else onChange(year, month + 1); };
   return (
     <div className="flex items-center gap-1 bg-[#F5F5F7] rounded-lg p-0.5">
       <button onClick={prev} className="p-1 rounded hover:bg-white"><ChevronLeft className="size-4" /></button>

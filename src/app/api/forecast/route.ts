@@ -1,12 +1,21 @@
 import { NextRequest, NextResponse } from "next/server";
 import { AnalyticsService } from "@/lib/analytics";
+import { getCurrentUserStoreIds } from "@/lib/auth";
 
 // 现金流预测
 export async function GET(req: NextRequest) {
+  const userStoreIds = await getCurrentUserStoreIds();
+  if (!userStoreIds) return NextResponse.json({ error: "未登录" }, { status: 401 });
+
   const storeId = req.nextUrl.searchParams.get("storeId") || undefined;
+  if (storeId && !userStoreIds.includes(storeId)) {
+    return NextResponse.json({ error: "无权限" }, { status: 403 });
+  }
+
   const days = parseInt(req.nextUrl.searchParams.get("days") || "30");
 
-  const trend = await AnalyticsService.getTrend(30, storeId);
+  const effectiveFilter = storeId || userStoreIds;
+  const trend = await AnalyticsService.getTrend(30, effectiveFilter);
   if (trend.length === 0) {
     return NextResponse.json({
       forecastDays: days,
@@ -17,12 +26,13 @@ export async function GET(req: NextRequest) {
   }
 
   const avgSales = trend.reduce((a, p) => a + p.sales, 0) / trend.length;
-  const avgProfit = trend.reduce((a, p) => a + p.profit, 0) / trend.length;
-  const avgCost = trend.reduce((a, p) => a + p.cost, 0) / trend.length;
+  // TrendPoint 没有 profit/cost 字段，用净销售额近似利润、推广费近似成本
+  const avgProfit = trend.reduce((a, p) => a + p.netSales, 0) / trend.length;
+  const avgCost = trend.reduce((a, p) => a + p.promotion, 0) / trend.length;
 
-  // 当前余额 = 年度累计净利润
-  const yearSummary = await AnalyticsService.getYearSummary(storeId);
-  const currentBalance = yearSummary.netProfit;
+  // 当前余额 = 年度累计净销售额（PeriodSummary 没有 netProfit，用 netSales 近似）
+  const yearSummary = await AnalyticsService.getNaturalYearSummary(effectiveFilter);
+  const currentBalance = yearSummary.netSales;
 
   const today = new Date(); today.setHours(0, 0, 0, 0);
   const dailyForecast: any[] = [];

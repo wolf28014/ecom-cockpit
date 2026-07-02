@@ -2,18 +2,29 @@ import { NextRequest, NextResponse } from "next/server";
 import { db } from "@/lib/db";
 import { AnalyticsService } from "@/lib/analytics";
 import { callGLM4, SYSTEM_PROMPT_REPORT, SYSTEM_PROMPT_BOSS } from "@/lib/ai";
+import { getCurrentUserStoreIds } from "@/lib/auth";
 
 // GET: 获取报告列表
 export async function GET(req: NextRequest) {
+  const userStoreIds = await getCurrentUserStoreIds();
+  if (!userStoreIds) return NextResponse.json({ error: "未登录" }, { status: 401 });
+
   const storeId = req.nextUrl.searchParams.get("storeId") || undefined;
+  if (storeId && !userStoreIds.includes(storeId)) {
+    return NextResponse.json({ error: "无权限" }, { status: 403 });
+  }
+
   const reportType = req.nextUrl.searchParams.get("type") || undefined;
   const limit = parseInt(req.nextUrl.searchParams.get("limit") || "10");
 
   const where: any = {};
-  if (storeId) where.storeId = storeId;
+  if (storeId) {
+    where.OR = [{ storeId }, { storeId: null }];
+  } else {
+    // 查询当前用户所有店铺 + 全店铺报告
+    where.OR = [{ storeId: { in: userStoreIds } }, { storeId: null }, { storeId: "" }];
+  }
   if (reportType) where.reportType = reportType;
-  // 当查询全店铺时，返回 storeId 为 null 或匹配的记录
-  if (!storeId) where.OR = [{ storeId: null }, { storeId: "" }];
 
   const reports = await db.aiReport.findMany({
     where,
@@ -25,8 +36,16 @@ export async function GET(req: NextRequest) {
 
 // POST: 生成报告（或前端直调后保存）
 export async function POST(req: NextRequest) {
+  const userStoreIds = await getCurrentUserStoreIds();
+  if (!userStoreIds) return NextResponse.json({ error: "未登录" }, { status: 401 });
+
   const body = await req.json();
   const { storeId, reportType, content, directSave } = body;
+
+  // 校验店铺归属
+  if (storeId && !userStoreIds.includes(storeId)) {
+    return NextResponse.json({ error: "无权限" }, { status: 403 });
+  }
 
   // 模式 A：前端直调 GLM API 后，直接保存内容
   if (directSave && content) {
@@ -58,7 +77,7 @@ export async function POST(req: NextRequest) {
   }
 
   // 模式 B：服务端生成（兼容旧逻辑）
-  const sid = storeId || undefined;
+  const sid = storeId || userStoreIds;
 
   let userPrompt = "";
   const today = new Date();
@@ -77,20 +96,20 @@ export async function POST(req: NextRequest) {
 
 今日数据（${todayStr}）：
 - 销售额：¥${todaySum.salesAmount.toLocaleString()}
-- 净利润：¥${todaySum.netProfit.toLocaleString()}
+- 净销售额：¥${todaySum.netSales.toLocaleString()}
 - 订单数：${todaySum.orderCount}
 - 客单价：¥${todaySum.avgOrderValue.toFixed(2)}
-- 利润率：${(todaySum.profitRate * 100).toFixed(1)}%
+- 推广占比：${(todaySum.promotionRate * 100).toFixed(1)}%
 - ROI：${todaySum.roi.toFixed(2)}
 - 推广费率：${(todaySum.promotionRate * 100).toFixed(1)}%
 - 退款率：${(todaySum.refundRate * 100).toFixed(1)}%
 
 昨日对比：
 - 销售额：¥${yesterdaySum.salesAmount.toLocaleString()}
-- 净利润：¥${yesterdaySum.netProfit.toLocaleString()}
+- 净销售额：¥${yesterdaySum.netSales.toLocaleString()}
 
 近 7 天趋势：
-${trend7.slice(-7).map(p => `  - ${p.date}: 销售¥${Math.round(p.sales).toLocaleString()}、利润¥${Math.round(p.profit).toLocaleString()}`).join("\n")}
+${trend7.slice(-7).map(p => `  - ${p.date}: 销售¥${Math.round(p.sales).toLocaleString()}、净销售¥${Math.round(p.netSales).toLocaleString()}`).join("\n")}
 
 推广渠道分布（近 7 天）：
 ${Object.entries(promo).map(([k, v]) => `  - ${k}: ¥${v.toLocaleString()}`).join("\n")}
@@ -107,9 +126,9 @@ ${Object.entries(promo).map(([k, v]) => `  - ${k}: ¥${v.toLocaleString()}`).joi
 
 本周数据：
 - 销售额：¥${weekSum.salesAmount.toLocaleString()}
-- 净利润：¥${weekSum.netProfit.toLocaleString()}
+- 净销售额：¥${weekSum.netSales.toLocaleString()}
 - 订单数：${weekSum.orderCount}
-- 利润率：${(weekSum.profitRate * 100).toFixed(1)}%
+- 推广占比：${(weekSum.promotionRate * 100).toFixed(1)}%
 - ROI：${weekSum.roi.toFixed(2)}
 
 近 14 天趋势：
@@ -120,21 +139,20 @@ ${skuStats.slice(0, 5).map(s => `  - ${s.skuName}（${s.skuCode}）：销售¥${
 
 请按 Markdown 格式输出周报，包含：本周总结、爆款表现、推广效果、问题诊断、下阶段建议。`;
   } else if (reportType === "monthly") {
-    const [monthSum, trend30, skuStats, promo, cost] = await Promise.all([
+    const [monthSum, trend30, skuStats, promo] = await Promise.all([
       AnalyticsService.getMonthSummary(sid),
       AnalyticsService.getTrend(30, sid),
       AnalyticsService.getSkuStats(30, sid),
       AnalyticsService.getPromotionBreakdown(30, sid),
-      AnalyticsService.getCostBreakdown(30, sid),
     ]);
 
     userPrompt = `请基于以下数据生成【本月经营月报】。
 
 本月数据：
 - 销售额：¥${monthSum.salesAmount.toLocaleString()}
-- 净利润：¥${monthSum.netProfit.toLocaleString()}
+- 净销售额：¥${monthSum.netSales.toLocaleString()}
 - 订单数：${monthSum.orderCount}
-- 利润率：${(monthSum.profitRate * 100).toFixed(1)}%
+- 推广占比：${(monthSum.promotionRate * 100).toFixed(1)}%
 - ROI：${monthSum.roi.toFixed(2)}
 
 本月 TOP 5 SKU：
@@ -142,9 +160,6 @@ ${skuStats.slice(0, 5).map(s => `  - ${s.skuName}：销售¥${Math.round(s.sales
 
 推广渠道分布：
 ${Object.entries(promo).map(([k, v]) => `  - ${k}: ¥${v.toLocaleString()}`).join("\n")}
-
-成本结构：
-${Object.entries(cost).map(([k, v]) => `  - ${k}: ¥${v.toLocaleString()}`).join("\n")}
 
 请按 Markdown 格式输出月报，包含：月度总结、爆款分析、推广效果、成本诊断、下月建议。`;
   } else if (reportType === "suggestion") {
@@ -167,14 +182,14 @@ ${Object.entries(cost).map(([k, v]) => `  - ${k}: ¥${v.toLocaleString()}`).join
 
 今日核心数据：
 - 销售额：¥${todaySum.salesAmount.toLocaleString()}
-- 净利润：¥${todaySum.netProfit.toLocaleString()}
-- 利润率：${(todaySum.profitRate * 100).toFixed(1)}%
+- 净销售额：¥${todaySum.netSales.toLocaleString()}
+- 推广占比：${(todaySum.promotionRate * 100).toFixed(1)}%
 - ROI：${todaySum.roi.toFixed(2)}
 - 推广费率：${(todaySum.promotionRate * 100).toFixed(1)}%
 
 本周数据：
 - 销售额：¥${weekSum.salesAmount.toLocaleString()}
-- 净利润：¥${weekSum.netProfit.toLocaleString()}
+- 净销售额：¥${weekSum.netSales.toLocaleString()}
 
 利润目标进度：
 ${progressStr}

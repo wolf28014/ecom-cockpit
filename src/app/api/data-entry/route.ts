@@ -128,6 +128,8 @@ export async function POST(req: NextRequest) {
     });
     invalidateCache("dash:"); // 清除首页缓存
     invalidateCache("analytics:"); // 清除分析缓存
+    invalidateCache("profit:");
+    invalidateCache("monthly-summary:");
     return NextResponse.json(updated);
   } else {
     const created = await db.dailyRecord.create({
@@ -135,6 +137,8 @@ export async function POST(req: NextRequest) {
     });
     invalidateCache("dash:");
     invalidateCache("analytics:");
+    invalidateCache("profit:");
+    invalidateCache("monthly-summary:");
     return NextResponse.json(created);
   }
 }

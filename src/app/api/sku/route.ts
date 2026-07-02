@@ -1,11 +1,22 @@
 import { NextRequest, NextResponse } from "next/server";
 import { AnalyticsService } from "@/lib/analytics";
+import { getCurrentUserStoreIds } from "@/lib/auth";
 
 export async function GET(req: NextRequest) {
+  const userStoreIds = await getCurrentUserStoreIds();
+  if (!userStoreIds) return NextResponse.json({ error: "未登录" }, { status: 401 });
+
   const storeId = req.nextUrl.searchParams.get("storeId") || undefined;
+  // 校验店铺归属
+  if (storeId && !userStoreIds.includes(storeId)) {
+    return NextResponse.json({ error: "无权限" }, { status: 403 });
+  }
+
   const days = parseInt(req.nextUrl.searchParams.get("days") || "30");
 
-  const stats = await AnalyticsService.getSkuStats(days, storeId);
+  // 未指定 storeId 时，限制到用户所有店铺
+  const effectiveFilter = storeId || userStoreIds;
+  const stats = await AnalyticsService.getSkuStats(days, effectiveFilter);
   return NextResponse.json({
     stats,
     rankings: {

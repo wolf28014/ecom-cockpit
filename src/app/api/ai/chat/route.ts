@@ -2,14 +2,27 @@ import { NextRequest, NextResponse } from "next/server";
 import { db } from "@/lib/db";
 import { AnalyticsService } from "@/lib/analytics";
 import { callGLM4, SYSTEM_PROMPT_BOSS } from "@/lib/ai";
+import { getCurrentUserStoreIds } from "@/lib/auth";
 
 // GET: 获取聊天历史
 export async function GET(req: NextRequest) {
+  const userStoreIds = await getCurrentUserStoreIds();
+  if (!userStoreIds) return NextResponse.json({ error: "未登录" }, { status: 401 });
+
   const storeId = req.nextUrl.searchParams.get("storeId") || "";
+  // 校验店铺归属
+  if (storeId && !userStoreIds.includes(storeId)) {
+    return NextResponse.json({ error: "无权限" }, { status: 403 });
+  }
+
   const limit = parseInt(req.nextUrl.searchParams.get("limit") || "20");
 
+  // 查询该店铺或全店铺的历史
+  const where = storeId
+    ? { storeId }
+    : { storeId: { in: [...userStoreIds, ""] } };
   const history = await db.chatHistory.findMany({
-    where: { storeId },
+    where,
     orderBy: { createdAt: "desc" },
     take: limit,
   });
@@ -18,8 +31,17 @@ export async function GET(req: NextRequest) {
 
 // POST: 发送消息
 export async function POST(req: NextRequest) {
+  const userStoreIds = await getCurrentUserStoreIds();
+  if (!userStoreIds) return NextResponse.json({ error: "未登录" }, { status: 401 });
+
   const { storeId, question } = await req.json();
-  const sid = storeId || undefined;
+  // 校验店铺归属
+  if (storeId && !userStoreIds.includes(storeId)) {
+    return NextResponse.json({ error: "无权限" }, { status: 403 });
+  }
+
+  // 构造 store filter：指定店铺则用单店铺，否则用全部用户店铺
+  const sid = storeId || userStoreIds;
 
   // 保存用户消息
   await db.chatHistory.create({

@@ -10,16 +10,17 @@ import { getCached, setCached, clearCacheByPrefix, LONG_TTL, SHORT_TTL } from "@
  * @param cacheKey 缓存键
  * @param enabled 是否启用
  * @param longCache 是否使用长缓存（24小时，用于历史数据）
- * @returns { data, loading, refresh }
+ * @returns { data, loading, error, refresh }
  */
 export function useCachedFetch<T = any>(
   url: string | null,
   cacheKey?: string,
   enabled: boolean = true,
   longCache: boolean = false
-): { data: T | null; loading: boolean; refresh: () => void } {
+): { data: T | null; loading: boolean; error: string | null; refresh: () => void } {
   const [data, setData] = useState<T | null>(null);
   const [loading, setLoading] = useState(true);
+  const [error, setError] = useState<string | null>(null);
 
   const key = cacheKey || `ecom:${url}`;
   const ttl = longCache ? LONG_TTL : SHORT_TTL;
@@ -35,6 +36,7 @@ export function useCachedFetch<T = any>(
       const cached = getCached<T>(key, ttl);
       if (cached) {
         setData(cached);
+        setError(null);
         setLoading(false);
         // 长缓存不后台刷新（历史数据不会变）
         if (!longCache) {
@@ -42,6 +44,7 @@ export function useCachedFetch<T = any>(
             .then(r => r.json())
             .then(d => {
               if (d && !d.error) {
+                setError(null);
                 setData(d);
                 setCached(key, d, ttl);
               }
@@ -71,18 +74,26 @@ export function useCachedFetch<T = any>(
 
       if (oldData) {
         setData(oldData);
+        setError(null);
         setLoading(false);
         // 后台加载新数据
         fetch(url)
           .then(r => r.json())
           .then(d => {
             if (d && !d.error) {
+              setError(null);
               setData(d);
               setCached(key, d, ttl);
               setLoading(false);
+            } else {
+              setError("加载失败");
+              setLoading(false);
             }
           })
-          .catch(() => setLoading(false));
+          .catch(() => {
+            setError("加载失败");
+            setLoading(false);
+          });
         return;
       }
     }
@@ -93,12 +104,18 @@ export function useCachedFetch<T = any>(
       .then(r => r.json())
       .then(d => {
         if (d && !d.error) {
+          setError(null);
           setData(d);
           setCached(key, d, ttl);
+        } else {
+          setError("加载失败");
         }
         setLoading(false);
       })
-      .catch(() => setLoading(false));
+      .catch(() => {
+        setError("加载失败");
+        setLoading(false);
+      });
   }, [url, key, enabled, longCache, ttl]);
 
   useEffect(() => {
@@ -111,7 +128,7 @@ export function useCachedFetch<T = any>(
     loadData(true);
   }, [key, loadData]);
 
-  return { data, loading, refresh };
+  return { data, loading, error, refresh };
 }
 
 /**

@@ -18,16 +18,6 @@ interface CacheEntry {
 const DEFAULT_TTL = 30 * 1000; // 30 秒
 const cache = new Map<string, CacheEntry>();
 
-// 定期清理过期缓存（每 5 分钟）
-if (typeof setInterval !== "undefined") {
-  setInterval(() => {
-    const now = Date.now();
-    for (const [key, entry] of cache.entries()) {
-      if (entry.expiresAt < now) cache.delete(key);
-    }
-  }, 5 * 60 * 1000);
-}
-
 /**
  * 读取缓存
  */

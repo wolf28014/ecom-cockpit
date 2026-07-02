@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from "next/server";
 import { db } from "@/lib/db";
 import { getCurrentUser, getCurrentUserStoreIds } from "@/lib/auth";
+import { invalidateCache } from "@/lib/server-cache";
 
 // GET: 获取用户所有 SKU 列表
 export async function GET() {
@@ -46,6 +47,8 @@ export async function POST(req: NextRequest) {
         stock: Number(stock) || 0,
       },
     });
+    invalidateCache("dash:");
+    invalidateCache("analytics:");
     return NextResponse.json(sku);
   } catch (e: any) {
     if (e.code === "P2002") {
@@ -81,6 +84,8 @@ export async function PUT(req: NextRequest) {
       ...(data.stock !== undefined ? { stock: Number(data.stock) } : {}),
     },
   });
+  invalidateCache("dash:");
+  invalidateCache("analytics:");
   return NextResponse.json(updated);
 }
 
@@ -105,6 +110,8 @@ export async function DELETE(req: NextRequest) {
     await db.dailySku.deleteMany({ where });
     // 再删 Sku
     await db.sku.deleteMany({ where });
+    invalidateCache("dash:");
+    invalidateCache("analytics:");
     return NextResponse.json({ ok: true, message: "已清空所有 SKU 数据" });
   }
 
@@ -117,5 +124,7 @@ export async function DELETE(req: NextRequest) {
 
   await db.dailySku.deleteMany({ where: { skuId: id } });
   await db.sku.delete({ where: { id } });
+  invalidateCache("dash:");
+  invalidateCache("analytics:");
   return NextResponse.json({ ok: true });
 }

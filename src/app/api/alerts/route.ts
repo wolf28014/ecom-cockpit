@@ -1,5 +1,6 @@
 import { NextRequest, NextResponse } from "next/server";
 import { db } from "@/lib/db";
+import { getCurrentUserStoreIds } from "@/lib/auth";
 
 const ALERT_THRESHOLDS = {
   salesDeclineDays: 3,
@@ -12,12 +13,20 @@ const ALERT_THRESHOLDS = {
 
 // GET: 获取预警列表
 export async function GET(req: NextRequest) {
+  const userStoreIds = await getCurrentUserStoreIds();
+  if (!userStoreIds) return NextResponse.json({ error: "未登录" }, { status: 401 });
+
   const storeId = req.nextUrl.searchParams.get("storeId") || undefined;
   const unreadOnly = req.nextUrl.searchParams.get("unread") === "true";
   const limit = parseInt(req.nextUrl.searchParams.get("limit") || "50");
 
-  const where: any = {};
-  if (storeId) where.OR = [{ storeId }, { storeId: null }];
+  const where: any = { OR: [{ storeId: { in: userStoreIds } }, { storeId: null }] };
+  if (storeId) {
+    if (!userStoreIds.includes(storeId)) {
+      return NextResponse.json({ error: "无权限" }, { status: 403 });
+    }
+    where.OR = [{ storeId }, { storeId: null }];
+  }
   if (unreadOnly) where.isRead = false;
 
   const alerts = await db.alert.findMany({
@@ -30,10 +39,16 @@ export async function GET(req: NextRequest) {
 
 // POST: 触发预警检测
 export async function POST(req: NextRequest) {
+  const userStoreIds = await getCurrentUserStoreIds();
+  if (!userStoreIds) return NextResponse.json({ error: "未登录" }, { status: 401 });
+
   const { storeId } = await req.json();
+  // 仅检测当前用户有权限的店铺
   const stores = storeId
-    ? [await db.store.findUnique({ where: { id: storeId } })]
-    : await db.store.findMany({ where: { isActive: true } });
+    ? userStoreIds.includes(storeId)
+      ? [await db.store.findUnique({ where: { id: storeId } })]
+      : []
+    : await db.store.findMany({ where: { id: { in: userStoreIds }, isActive: true } });
 
   const newAlerts: any[] = [];
 
@@ -69,15 +84,15 @@ export async function POST(req: NextRequest) {
       }
     }
 
-    // 2. 利润下降
-    if (yesterday.netProfit > 0) {
-      const decline = (yesterday.netProfit - today.netProfit) / yesterday.netProfit;
+    // 2. 利润下降（用净销售额近似净利润，DailyRecord.netProfit 已废弃）
+    if (yesterday.netSales > 0) {
+      const decline = (yesterday.netSales - today.netSales) / yesterday.netSales;
       if (decline > ALERT_THRESHOLDS.profitDeclinePct) {
         newAlerts.push({
           storeId: s.id, alertType: "profit_decline",
           level: decline > 0.3 ? "critical" : "warning",
-          title: `【${s.name}】利润环比下降 ${(decline * 100).toFixed(1)}%`,
-          content: `昨日净利润 ¥${yesterday.netProfit.toLocaleString()}，今日净利润 ¥${today.netProfit.toLocaleString()}`,
+          title: `【${s.name}】净销售环比下降 ${(decline * 100).toFixed(1)}%`,
+          content: `昨日净销售额 ¥${yesterday.netSales.toLocaleString()}，今日净销售额 ¥${today.netSales.toLocaleString()}`,
         });
       }
     }
@@ -128,13 +143,27 @@ export async function POST(req: NextRequest) {
 
 // PUT: 标记已读
 export async function PUT(req: NextRequest) {
+  const userStoreIds = await getCurrentUserStoreIds();
+  if (!userStoreIds) return NextResponse.json({ error: "未登录" }, { status: 401 });
+
   const { id, all, storeId } = await req.json();
   if (all) {
+    const where = storeId
+      ? userStoreIds.includes(storeId)
+        ? { OR: [{ storeId }, { storeId: null }] }
+        : { storeId: { in: userStoreIds } }
+      : { OR: [{ storeId: { in: userStoreIds } }, { storeId: null }] };
     await db.alert.updateMany({
-      where: storeId ? { OR: [{ storeId }, { storeId: null }] } : {},
+      where,
       data: { isRead: true },
     });
   } else if (id) {
+    // 校验预警归属
+    const alert = await db.alert.findUnique({ where: { id } });
+    if (!alert) return NextResponse.json({ error: "Not found" }, { status: 404 });
+    if (alert.storeId && !userStoreIds.includes(alert.storeId)) {
+      return NextResponse.json({ error: "无权限" }, { status: 403 });
+    }
     await db.alert.update({ where: { id }, data: { isRead: true } });
   }
   return NextResponse.json({ ok: true });

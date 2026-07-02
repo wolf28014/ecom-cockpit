@@ -88,13 +88,13 @@ export function StoresPage() {
     try {
       const results = await Promise.all(
         stores.filter(s => s.isActive).map(async s => {
-          const r = await fetch(`/api/dashboard?storeId=${s.id}&days=30`);
+          const r = await fetch(`/api/dashboard?storeIds=${s.id}&days=30`);
           const d = await r.json();
           return {
             name: s.name,
             platform: s.platform,
             sales: d?.month?.salesAmount || 0,
-            profit: d?.month?.netProfit || 0,
+            profit: d?.month?.netSales || 0,
           };
         })
       );

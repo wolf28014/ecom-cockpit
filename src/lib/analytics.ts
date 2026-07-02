@@ -101,6 +101,7 @@ export interface MonthlyCostData {
   charity: number;
   quickPaymentFee: number;
   marketingPlatform: number;
+  tax: number;
   totalCost: number;
   note?: string | null;
 }
@@ -524,7 +525,7 @@ export class AnalyticsService {
       data.goodsCost + data.redPacket + data.labor + data.other +
       data.consumerExperience + data.bnplTechFee + data.basicSoftwareFee +
       data.redPacketAdvance + data.logistics + data.brandGiftFee +
-      data.charity + data.quickPaymentFee + data.marketingPlatform
+      data.charity + data.quickPaymentFee + data.marketingPlatform + data.tax
     ) * 100) / 100;
 
     const existing = await db.monthlyCost.findUnique({

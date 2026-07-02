@@ -13,7 +13,6 @@ import {
 } from "recharts";
 import { Progress } from "@/components/ui/progress";
 import { useCachedFetch } from "@/lib/use-cached-fetch";
-import { DateRangePicker, type DateRange } from "@/components/ecom/date-range-picker";
 
 const PIE_COLORS = ["#0071E3", "#34C759", "#FF9500", "#AF52DE", "#FF3B30", "#5856D6", "#FF2D55"];
 

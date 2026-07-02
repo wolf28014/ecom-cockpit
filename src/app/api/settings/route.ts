@@ -1,7 +1,11 @@
 import { NextRequest, NextResponse } from "next/server";
 import { db } from "@/lib/db";
+import { getCurrentUser } from "@/lib/auth";
 
 export async function GET() {
+  const user = await getCurrentUser();
+  if (!user) return NextResponse.json({ error: "未登录" }, { status: 401 });
+
   const settings = await db.setting.findMany();
   const obj: Record<string, string> = {};
   for (const s of settings) obj[s.key] = s.value;
@@ -9,6 +13,9 @@ export async function GET() {
 }
 
 export async function PUT(req: NextRequest) {
+  const user = await getCurrentUser();
+  if (!user) return NextResponse.json({ error: "未登录" }, { status: 401 });
+
   const body = await req.json();
   for (const [key, value] of Object.entries(body)) {
     const existing = await db.setting.findUnique({ where: { key } });

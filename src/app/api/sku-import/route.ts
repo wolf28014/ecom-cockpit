@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from "next/server";
 import { db } from "@/lib/db";
 import { getCurrentUserStoreIds } from "@/lib/auth";
+import { invalidateCache } from "@/lib/server-cache";
 
 /**
  * SKU 批量导入 API（聚水潭格式）
@@ -118,6 +119,10 @@ export async function POST(req: NextRequest) {
       });
     }
   }
+
+  invalidateCache("dash:");
+  invalidateCache("analytics:");
+  invalidateCache("profit:");
 
   return NextResponse.json({
     ok: true,

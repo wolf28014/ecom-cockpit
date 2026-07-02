@@ -165,7 +165,7 @@ export function DataImportPage() {
       for (let i = 0; i < updated.length; i++) {
         const row = updated[i];
         try {
-          const promotionData = { "通用推广": row.推广费 };
+          const promotionData = { "其它": row.推广费 };
           const res = await fetch("/api/data-entry", {
             method: "POST",
             headers: { "Content-Type": "application/json" },

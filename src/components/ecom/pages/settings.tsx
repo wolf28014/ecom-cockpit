@@ -10,7 +10,7 @@ import {
   Select, SelectContent, SelectItem, SelectTrigger, SelectValue,
 } from "@/components/ui/select";
 import {
-  Bot, Clock, Building2, AlertTriangle, Save, Loader2, CheckCircle2, Key, Zap,
+  Bot, Building2, AlertTriangle, Save, Loader2, CheckCircle2, Key, Zap,
 } from "lucide-react";
 import { toast } from "sonner";
 import { getApiKey, saveApiKey, getApiBaseUrl, saveApiBaseUrl, getAiModel, saveAiModel, AI_PROVIDERS } from "@/lib/ai-client";
