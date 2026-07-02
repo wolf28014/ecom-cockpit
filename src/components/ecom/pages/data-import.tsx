@@ -356,6 +356,9 @@ export function DataImportPage() {
 
       {/* 聚水潭 SKU 销量导入 */}
       <SkuImportSection storeId={storeId} />
+
+      {/* 月度成本导入 */}
+      <CostImportSection storeId={storeId} />
     </div>
   );
 }
@@ -515,6 +518,232 @@ function SkuImportSection({ storeId }: { storeId: string }) {
           <p>• SKU编码（商品SKU/商品编码/货号） · 商品名称（组合名称/品名）</p>
           <p>• 销售数量 · 销售金额 · 退款数量 · 退款金额 · 库存 · 成本</p>
           <p>导入后自动创建/更新 SKU 并生成当日销售数据。</p>
+        </div>
+      </div>
+    </SectionCard>
+  );
+}
+
+// =================== 月度成本导入（业务大类格式） ===================
+// 导入格式：月份 | 业务大类 | 扣费金额合计(元)
+// 不能分类的自动归到"其它"
+function CostImportSection({ storeId }: { storeId: string }) {
+  const [costFile, setCostFile] = useState<File | null>(null);
+  const [costPreview, setCostPreview] = useState<any[]>([]);
+  const [importing, setImporting] = useState(false);
+
+  // 业务大类 → 数据库字段映射
+  const CATEGORY_MAP: Record<string, string> = {
+    "货品成本": "goodsCost",
+    "商品成本": "goodsCost",
+    "红包": "redPacket",
+    "人工": "labor",
+    "消费者体验提升计划服务费": "consumerExperience",
+    "消费者体验": "consumerExperience",
+    "先用后付技术服务费": "bnplTechFee",
+    "先用后付": "bnplTechFee",
+    "基础软件服务费": "basicSoftwareFee",
+    "限时红包代商家垫付扣回": "redPacketAdvance",
+    "红包垫付": "redPacketAdvance",
+    "商家集运物流服务费": "logistics",
+    "集运物流": "logistics",
+    "物流": "logistics",
+    "品牌新享淘宝礼金软件服务费": "brandGiftFee",
+    "品牌礼金": "brandGiftFee",
+    "公益宝贝": "charity",
+    "淘宝极速回款手动回款服务费": "quickPaymentFee",
+    "极速回款": "quickPaymentFee",
+    "营销平台": "marketingPlatform",
+  };
+
+  // 模糊匹配业务大类
+  function matchCategory(label: string): string {
+    const trimmed = label.trim();
+    // 精确匹配
+    if (CATEGORY_MAP[trimmed]) return CATEGORY_MAP[trimmed];
+    // 模糊匹配
+    for (const [key, field] of Object.entries(CATEGORY_MAP)) {
+      if (trimmed.includes(key) || key.includes(trimmed)) return field;
+    }
+    return "other"; // 不能分类的归到"其它"
+  }
+
+  const handleCostFile = async (file: File) => {
+    setCostFile(file);
+    try {
+      const buf = await file.arrayBuffer();
+      const wb = XLSX.read(buf, { type: "array" });
+      const ws = wb.Sheets[wb.SheetNames[0]];
+      const rows = XLSX.utils.sheet_to_json<any>(ws);
+
+      // 模糊匹配列名
+      const findKey = (row: any, aliases: string[]): string | null => {
+        for (const key of Object.keys(row)) {
+          if (aliases.some(a => key.includes(a))) return key;
+        }
+        return null;
+      };
+
+      // 按月份+大类分组
+      const grouped: Record<string, Record<string, number>> = {}; // { "2026-07": { goodsCost: 100, other: 50 } }
+
+      for (const row of rows) {
+        const monthKey = findKey(row, ["月份", "月", "时间"]);
+        const categoryKey = findKey(row, ["业务大类", "大类", "类目", "项目", "类型"]);
+        const amountKey = findKey(row, ["扣费金额合计", "扣费金额", "金额", "费用"]);
+
+        if (!monthKey || !categoryKey || !amountKey) continue;
+
+        let monthStr = String(row[monthKey] || "").trim();
+        // 处理各种月份格式：2026-07 / 2026年7月 / 202607 / Excel日期
+        if (typeof row[monthKey] === "number") {
+          // Excel 日期序列
+          const date = XLSX.SSF.parse_date_code(row[monthKey]);
+          if (date) monthStr = `${date.y}-${String(date.m).padStart(2, "0")}`;
+        }
+        monthStr = monthStr.replace(/年|月/g, "-").replace(/-/g, "-").replace(/^(\d{4})-(\d{1,2})$/, (m, y, mo) => `${y}-${mo.padStart(2, "0")}`);
+        if (!/^\d{4}-\d{2}$/.test(monthStr)) continue;
+
+        const categoryLabel = String(row[categoryKey] || "").trim();
+        const field = matchCategory(categoryLabel);
+        const amount = Number(row[amountKey]) || 0;
+
+        if (!grouped[monthStr]) grouped[monthStr] = {};
+        grouped[monthStr][field] = (grouped[monthStr][field] || 0) + amount;
+      }
+
+      // 转成预览数组
+      const preview = Object.entries(grouped).map(([month, costs]) => ({
+        month,
+        ...costs,
+        total: Object.values(costs).reduce((a: number, b: number) => a + b, 0),
+      })).sort((a, b) => a.month.localeCompare(b.month));
+
+      setCostPreview(preview);
+      toast.success(`解析到 ${preview.length} 个月的成本数据`);
+    } catch {
+      toast.error("文件解析失败");
+    }
+  };
+
+  const handleCostImport = async () => {
+    if (storeId === "all") { toast.error("请先选择店铺"); return; }
+    if (costPreview.length === 0) { toast.error("无数据"); return; }
+    setImporting(true);
+    try {
+      let ok = 0;
+      for (const item of costPreview) {
+        const [year, month] = item.month.split("-");
+        const res = await fetch("/api/monthly-cost", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({
+            storeId,
+            year: Number(year),
+            month: Number(month),
+            goodsCost: item.goodsCost || 0,
+            redPacket: item.redPacket || 0,
+            labor: item.labor || 0,
+            other: item.other || 0,
+            consumerExperience: item.consumerExperience || 0,
+            bnplTechFee: item.bnplTechFee || 0,
+            basicSoftwareFee: item.basicSoftwareFee || 0,
+            redPacketAdvance: item.redPacketAdvance || 0,
+            logistics: item.logistics || 0,
+            brandGiftFee: item.brandGiftFee || 0,
+            charity: item.charity || 0,
+            quickPaymentFee: item.quickPaymentFee || 0,
+            marketingPlatform: item.marketingPlatform || 0,
+          }),
+        });
+        if (res.ok) ok++;
+      }
+      toast.success(`成本导入完成：${ok} 个月`);
+      setCostPreview([]);
+      setCostFile(null);
+    } catch {
+      toast.error("导入失败");
+    } finally {
+      setImporting(false);
+    }
+  };
+
+  const FIELD_LABELS: Record<string, string> = {
+    goodsCost: "货品成本", redPacket: "红包", labor: "人工", other: "其它",
+    consumerExperience: "消费者体验", bnplTechFee: "先用后付", basicSoftwareFee: "基础软件费",
+    redPacketAdvance: "红包垫付", logistics: "集运物流", brandGiftFee: "品牌礼金",
+    charity: "公益宝贝", quickPaymentFee: "极速回款", marketingPlatform: "营销平台",
+  };
+
+  return (
+    <SectionCard title="月度成本导入" subtitle="格式：月份 | 业务大类 | 扣费金额合计">
+      <div className="space-y-4">
+        <div className="flex flex-wrap items-end gap-3">
+          <div className="space-y-1.5 flex-1">
+            <Label className="text-xs">选择成本明细 Excel 文件</Label>
+            <input
+              type="file"
+              accept=".xlsx,.xls,.csv"
+              onChange={e => e.target.files?.[0] && handleCostFile(e.target.files[0])}
+              className="block w-full text-sm text-muted-foreground
+                file:mr-3 file:py-2 file:px-4 file:rounded-lg
+                file:border-0 file:text-sm file:font-medium
+                file:bg-[#34C759] file:text-white
+                hover:file:bg-[#2BB24C] file:cursor-pointer"
+            />
+          </div>
+          <Button
+            onClick={handleCostImport}
+            disabled={importing || costPreview.length === 0 || storeId === "all"}
+          >
+            {importing ? <Loader2 className="size-4 mr-1 animate-spin" /> : <FileSpreadsheet className="size-4 mr-1" />}
+            导入 {costPreview.length > 0 ? `(${costPreview.length}月)` : ""}
+          </Button>
+        </div>
+
+        {costFile && <p className="text-xs text-muted-foreground">已选择：{costFile.name}</p>}
+
+        {costPreview.length > 0 && (
+          <div className="max-h-[400px] overflow-auto rounded-lg border">
+            <Table>
+              <TableHeader>
+                <TableRow>
+                  <TableHead>月份</TableHead>
+                  {Object.entries(FIELD_LABELS).map(([key, label]) => (
+                    <TableHead key={key} className="text-right">{label}</TableHead>
+                  ))}
+                  <TableHead className="text-right font-bold">合计</TableHead>
+                </TableRow>
+              </TableHeader>
+              <TableBody>
+                {costPreview.map((item, i) => (
+                  <TableRow key={i}>
+                    <TableCell className="font-medium">{item.month}</TableCell>
+                    {Object.entries(FIELD_LABELS).map(([key]) => (
+                      <TableCell key={key} className="text-right text-xs">
+                        {item[key] ? `¥${Number(item[key]).toLocaleString()}` : "—"}
+                      </TableCell>
+                    ))}
+                    <TableCell className="text-right font-bold text-[#FF3B30]">¥{item.total.toLocaleString()}</TableCell>
+                  </TableRow>
+                ))}
+              </TableBody>
+            </Table>
+          </div>
+        )}
+
+        <div className="rounded-lg bg-[#F5F5F7] p-3 text-xs text-muted-foreground space-y-1">
+          <p className="font-medium text-foreground">导入格式说明：</p>
+          <p>Excel 需包含 3 列：<b>月份</b> | <b>业务大类</b> | <b>扣费金额合计(元)</b></p>
+          <p>月份格式：2026-07 / 2026年7月 / 202607 均可</p>
+          <p>业务大类自动匹配以下分类（模糊匹配）：</p>
+          <div className="grid grid-cols-2 md:grid-cols-3 gap-1 mt-1">
+            {Object.entries(FIELD_LABELS).map(([key, label]) => (
+              <span key={key} className="text-[10px]">• {label}</span>
+            ))}
+          </div>
+          <p className="mt-1 text-[#FF9500]">⚠ 不能匹配的业务大类自动归到「其它」</p>
+          <p>同月数据重复导入将自动覆盖。</p>
         </div>
       </div>
     </SectionCard>
