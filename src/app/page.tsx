@@ -3,7 +3,7 @@
 import { useState, useEffect } from "react";
 import {
   LayoutDashboard, Store, PencilLine, UploadCloud, BarChart3, Bot,
-  Target, Package, Settings, Bell, TrendingUp, LogOut,
+  Target, Package, FileText, Settings, Bell, TrendingUp, LogOut,
 } from "lucide-react";
 import { cn } from "@/lib/utils";
 import { Badge } from "@/components/ui/badge";
