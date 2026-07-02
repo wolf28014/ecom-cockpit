@@ -341,7 +341,7 @@ export function StoresPage() {
                 />
                 <span className="text-sm text-muted-foreground">%</span>
                 <p className="text-xs text-muted-foreground flex-1">
-                  销售额 × 此比例 = 货品成本。例：销售额 1000 × 63% = 货品成本 630
+                  净销售额 × 此比例 = 货品成本。例：净销售额 950（销售1000-退款50）× 63% = 货品成本 598.5
                 </p>
               </div>
             </div>

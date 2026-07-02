@@ -79,14 +79,15 @@ export async function GET(req: NextRequest) {
 
     if (goodsCost === 0 && sales > 0) {
       // 没有月度成本数据，按各店铺的 goodsCostRatio 自动算
-      // 按店铺分组计算销售额，再乘以各自比例
-      const salesByStore = new Map<string, number>();
+      // 货品成本 = 净销售额 × 比例（净销售额 = 销售额 - 退款）
+      const netSalesByStore = new Map<string, number>();
       for (const r of records) {
-        salesByStore.set(r.storeId, (salesByStore.get(r.storeId) || 0) + r.salesAmount);
+        const net = r.salesAmount - r.refundAmount;
+        netSalesByStore.set(r.storeId, (netSalesByStore.get(r.storeId) || 0) + net);
       }
-      for (const [storeId, storeSales] of salesByStore) {
+      for (const [storeId, storeNetSales] of netSalesByStore) {
         const ratio = storeRatioMap.get(storeId) || 0.63;
-        goodsCost += storeSales * ratio;
+        goodsCost += storeNetSales * ratio;
       }
       goodsCostSource = "ratio";
     }
