@@ -33,7 +33,7 @@ export function useCachedFetch<T = any>(
       return;
     }
 
-    // 1. 先尝试缓存
+    // 1. 先尝试缓存（不显示 loading，直接秒显示）
     if (!force) {
       const cached = getCached<T>(key);
       if (cached) {
@@ -53,18 +53,51 @@ export function useCachedFetch<T = any>(
       }
     }
 
-    // 2. 无缓存或强制刷新：显示 loading 并请求
-    setLoading(true);
-    fetch(url)
-      .then(r => r.json())
-      .then(d => {
-        if (d && !d.error) {
-          setData(d);
-          setCached(key, d);
-        }
-        setLoading(false);
-      })
-      .catch(() => setLoading(false));
+    // 2. 无缓存：先检查是否有旧版本缓存（key 前缀相同但日期不同）
+    //    如果有，先显示旧数据（不白屏），再后台加载新数据
+    const prefix = key.split(":").slice(0, -1).join(":");
+    const allKeys = Object.keys(localStorage);
+    let oldData: T | null = null;
+    for (const k of allKeys) {
+      if (k.startsWith(prefix + ":") && k !== key) {
+        try {
+          const item = JSON.parse(localStorage.getItem(k) || "");
+          if (item?.data && Date.now() - item.timestamp < 30 * 60 * 1000) {
+            oldData = item.data;
+            break;
+          }
+        } catch {}
+      }
+    }
+
+    if (oldData && !force) {
+      setData(oldData);
+      setLoading(false);
+      // 后台加载新数据，加载完替换
+      fetch(url)
+        .then(r => r.json())
+        .then(d => {
+          if (d && !d.error) {
+            setData(d);
+            setCached(key, d);
+            setLoading(false);
+          }
+        })
+        .catch(() => setLoading(false));
+    } else {
+      // 3. 完全无缓存：显示 loading 并请求
+      setLoading(true);
+      fetch(url)
+        .then(r => r.json())
+        .then(d => {
+          if (d && !d.error) {
+            setData(d);
+            setCached(key, d);
+          }
+          setLoading(false);
+        })
+        .catch(() => setLoading(false));
+    }
   }, [url, key, enabled]);
 
   useEffect(() => {

@@ -21,8 +21,7 @@ import { importManager } from "@/lib/import-task";
 import { Tabs, TabsList, TabsTrigger, TabsContent } from "@/components/ui/tabs";
 
 const TEMPLATE_HEADERS = [
-  "日期", "销售额", "订单数", "退款金额", "退款订单数",
-  "推广费", "商品成本", "运费", "包装", "人工", "房租", "其他",
+  "日期", "销售额", "订单数", "退款金额", "访客数", "推广费",
 ];
 
 const TEMPLATE_TYPES: Record<string, string> = {
@@ -38,14 +37,8 @@ interface PreviewRow {
   销售额: number;
   订单数: number;
   退款金额: number;
-  退款订单数: number;
+  访客数: number;
   推广费: number;
-  商品成本: number;
-  运费: number;
-  包装: number;
-  人工: number;
-  房租: number;
-  其他: number;
   _status?: "pending" | "ok" | "error";
   _msg?: string;
 }
@@ -112,14 +105,8 @@ export function DataImportPage() {
           销售额: num(get(["销售额", "sales"])),
           订单数: num(get(["订单数", "订单", "orders"])),
           退款金额: num(get(["退款金额", "退款"])),
-          退款订单数: num(get(["退款订单", "退款单"])),
+          访客数: num(get(["访客数", "访客", "visitors"])),
           推广费: num(get(["推广费", "推广"])),
-          商品成本: num(get(["商品成本", "商品"])),
-          运费: num(get(["运费"])),
-          包装: num(get(["包装"])),
-          人工: num(get(["人工"])),
-          房租: num(get(["房租"])),
-          其他: num(get(["其他"])),
           _status: "pending",
         };
       }).filter(r => r.日期);
@@ -179,14 +166,6 @@ export function DataImportPage() {
         const row = updated[i];
         try {
           const promotionData = { "通用推广": row.推广费 };
-          const costData = {
-            "商品成本": row.商品成本,
-            "运费": row.运费,
-            "包装": row.包装,
-            "人工": row.人工,
-            "房租": row.房租,
-            "其他": row.其他,
-          };
           const res = await fetch("/api/data-entry", {
             method: "POST",
             headers: { "Content-Type": "application/json" },
@@ -196,9 +175,8 @@ export function DataImportPage() {
               salesAmount: row.销售额,
               orderCount: row.订单数,
               refundAmount: row.退款金额,
-              refundOrderCount: row.退款订单数,
+              visitors: row.访客数,
               promotionData,
-              costData,
             }),
           });
           if (res.ok) {
@@ -312,12 +290,10 @@ export function DataImportPage() {
                   <TableHead className="w-12">状态</TableHead>
                   <TableHead>日期</TableHead>
                   <TableHead className="text-right">销售额</TableHead>
-                  <TableHead className="text-right">订单</TableHead>
-                  <TableHead className="text-right">退款</TableHead>
+                  <TableHead className="text-right">订单数</TableHead>
+                  <TableHead className="text-right">退款金额</TableHead>
+                  <TableHead className="text-right">访客数</TableHead>
                   <TableHead className="text-right">推广费</TableHead>
-                  <TableHead className="text-right">商品成本</TableHead>
-                  <TableHead className="text-right">运费</TableHead>
-                  <TableHead className="text-right">其他成本</TableHead>
                 </TableRow>
               </TableHeader>
               <TableBody>
@@ -332,10 +308,8 @@ export function DataImportPage() {
                     <TableCell className="text-right">{row.销售额.toLocaleString()}</TableCell>
                     <TableCell className="text-right">{row.订单数}</TableCell>
                     <TableCell className="text-right">{row.退款金额.toLocaleString()}</TableCell>
+                    <TableCell className="text-right">{row.访客数.toLocaleString()}</TableCell>
                     <TableCell className="text-right">{row.推广费.toLocaleString()}</TableCell>
-                    <TableCell className="text-right">{row.商品成本.toLocaleString()}</TableCell>
-                    <TableCell className="text-right">{row.运费.toLocaleString()}</TableCell>
-                    <TableCell className="text-right">{(row.包装 + row.人工 + row.房租 + row.其他).toLocaleString()}</TableCell>
                   </TableRow>
                 ))}
               </TableBody>
