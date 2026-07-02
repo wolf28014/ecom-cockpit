@@ -25,10 +25,11 @@ import { ProfitCenterPage } from "@/components/ecom/pages/profit-center";
 import { SkuPage } from "@/components/ecom/pages/sku";
 import { AiCenterPage } from "@/components/ecom/pages/ai-center";
 import { SettingsPage } from "@/components/ecom/pages/settings";
+import { DataDetailPage } from "@/components/ecom/pages/data-detail";
 
 type PageKey =
   | "dashboard" | "stores" | "data-entry" | "data-import" | "analytics"
-  | "profit-center" | "sku" | "ai-center" | "settings";
+  | "profit-center" | "sku" | "data-detail" | "ai-center" | "settings";
 
 interface NavItem {
   key: PageKey;
@@ -44,6 +45,7 @@ const NAV_ITEMS: NavItem[] = [
   { key: "data-import", label: "Excel 导入", icon: UploadCloud, group: "data" },
   { key: "analytics", label: "经营分析", icon: BarChart3, group: "analysis" },
   { key: "profit-center", label: "利润中心", icon: Target, group: "analysis" },
+  { key: "data-detail", label: "数据明细", icon: FileText, group: "analysis" },
   { key: "sku", label: "SKU 分析", icon: Package, group: "analysis" },
   { key: "ai-center", label: "AI 经营中心", icon: Bot, group: "ai" },
   { key: "settings", label: "系统设置", icon: Settings, group: "system" },
@@ -64,6 +66,7 @@ const PAGE_TITLES: Record<PageKey, { title: string; subtitle: string }> = {
   "data-import": { title: "Excel 导入", subtitle: "批量导入每日数据 + 聚水潭SKU" },
   analytics: { title: "经营分析", subtitle: "日 / 月 / 自然年 / 季节年" },
   "profit-center": { title: "利润中心", subtitle: "利润计算 · 利润目标 · 现金流预测" },
+  "data-detail": { title: "数据明细", subtitle: "每日销售 · 每月汇总 · 成本明细" },
   "ai-center": { title: "AI 经营中心", subtitle: "GLM-4 智能分析与建议" },
   sku: { title: "SKU 分析", subtitle: "爆款/利润/滞销/高退款" },
   settings: { title: "系统设置", subtitle: "AI 配置 / 预警阈值 / 备份" },
@@ -183,6 +186,7 @@ function AppContent({
         <div style={{ display: activePage === "data-import" ? "block" : "none" }}><DataImportPage /></div>
         <div style={{ display: activePage === "analytics" ? "block" : "none" }}><AnalyticsPage /></div>
         <div style={{ display: activePage === "profit-center" ? "block" : "none" }}><ProfitCenterPage /></div>
+        <div style={{ display: activePage === "data-detail" ? "block" : "none" }}><DataDetailPage /></div>
         <div style={{ display: activePage === "sku" ? "block" : "none" }}><SkuPage /></div>
         <div style={{ display: activePage === "ai-center" ? "block" : "none" }}><AiCenterPage /></div>
         <div style={{ display: activePage === "settings" ? "block" : "none" }}><SettingsPage /></div>
