@@ -29,6 +29,7 @@ const COST_FIELDS = [
   { key: "charity", label: "公益宝贝", color: "#AF52DE" },
   { key: "quickPaymentFee", label: "极速回款", color: "#AF52DE" },
   { key: "marketingPlatform", label: "营销平台", color: "#AF52DE" },
+  { key: "tax", label: "税务", color: "#FF3B30" },
 ];
 
 export function ProfitCenterPage() {

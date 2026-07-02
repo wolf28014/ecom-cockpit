@@ -630,4 +630,5 @@ export const MONTHLY_COST_FIELDS = [
   { key: "charity", label: "公益宝贝" },
   { key: "quickPaymentFee", label: "淘宝极速回款手动回款服务费" },
   { key: "marketingPlatform", label: "营销平台" },
+  { key: "tax", label: "税务" },
 ] as const;

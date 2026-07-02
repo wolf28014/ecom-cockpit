@@ -105,6 +105,7 @@ export async function GET(req: NextRequest) {
     const charity = monthlyCosts.reduce((a, c) => a + c.charity, 0);
     const quickPaymentFee = monthlyCosts.reduce((a, c) => a + c.quickPaymentFee, 0);
     const marketingPlatform = monthlyCosts.reduce((a, c) => a + c.marketingPlatform, 0);
+    const tax = monthlyCosts.reduce((a, c) => a + (c as any).tax || 0, 0);
     const monthlyTotalCost = monthlyCosts.reduce((a, c) => a + c.totalCost, 0);
 
     // 如果货品成本是按比例算的，总成本 = 货品成本(比例) + 其他月度成本(不含货品)
@@ -144,6 +145,7 @@ export async function GET(req: NextRequest) {
       charity: Math.round(charity * 100) / 100,
       quickPaymentFee: Math.round(quickPaymentFee * 100) / 100,
       marketingPlatform: Math.round(marketingPlatform * 100) / 100,
+      tax: Math.round(tax * 100) / 100,
       totalCost: Math.round(totalCost * 100) / 100,
       otherCosts: Math.round(otherCosts * 100) / 100,
       // 利润

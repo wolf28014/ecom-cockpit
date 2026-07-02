@@ -554,6 +554,7 @@ function CostImportSection({ storeId }: { storeId: string }) {
     "淘宝极速回款手动回款服务费": "quickPaymentFee",
     "极速回款": "quickPaymentFee",
     "营销平台": "marketingPlatform",
+    "税务": "tax",
   };
 
   // 模糊匹配业务大类
@@ -655,6 +656,7 @@ function CostImportSection({ storeId }: { storeId: string }) {
             charity: item.charity || 0,
             quickPaymentFee: item.quickPaymentFee || 0,
             marketingPlatform: item.marketingPlatform || 0,
+            tax: item.tax || 0,
           }),
         });
         if (res.ok) {
@@ -683,7 +685,7 @@ function CostImportSection({ storeId }: { storeId: string }) {
     goodsCost: "货品成本", redPacket: "红包", labor: "人工", other: "其它",
     consumerExperience: "消费者体验", bnplTechFee: "先用后付", basicSoftwareFee: "基础软件费",
     redPacketAdvance: "红包垫付", logistics: "集运物流", brandGiftFee: "品牌礼金",
-    charity: "公益宝贝", quickPaymentFee: "极速回款", marketingPlatform: "营销平台",
+    charity: "公益宝贝", quickPaymentFee: "极速回款", marketingPlatform: "营销平台", tax: "税务",
   };
 
   return (

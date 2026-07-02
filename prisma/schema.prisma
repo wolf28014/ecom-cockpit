@@ -138,6 +138,7 @@ model MonthlyCost {
   charity          Float @default(0)  // 公益宝贝
   quickPaymentFee  Float @default(0)  // 淘宝极速回款手动回款服务费
   marketingPlatform Float @default(0) // 营销平台
+  tax              Float @default(0) // 税务
 
   totalCost Float @default(0)  // 自动汇总
   note      String?

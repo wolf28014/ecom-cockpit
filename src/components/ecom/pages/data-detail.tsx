@@ -1,23 +1,26 @@
 "use client";
 
-import { useState, useEffect } from "react";
+import { useState } from "react";
 import { SectionCard } from "@/components/ecom/kpi";
 import { RefreshButton } from "@/components/ecom/store-selector";
 import { StoreMultiSelect } from "@/components/ecom/store-multi-select";
 import { useCachedFetch } from "@/lib/use-cached-fetch";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { Card, CardContent } from "@/components/ui/card";
-import { ChevronLeft, ChevronRight } from "lucide-react";
+import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
+import { ToggleGroup, ToggleGroupItem } from "@/components/ui/toggle-group";
 import { cn } from "@/lib/utils";
 
 export function DataDetailPage() {
   const [storeIds, setStoreIds] = useState<string[]>([]);
   const [tab, setTab] = useState<"daily" | "monthly" | "cost">("daily");
 
-  // 日明细日期选择
-  const [dayDate, setDayDate] = useState(new Date().toISOString().slice(0, 10));
-  // 月明细选择
+  // 日明细：自然年/季节年 + 年份
   const now = new Date();
+  const [yearType, setYearType] = useState<"natural" | "seasonal">("natural");
+  const [dailyYear, setDailyYear] = useState(now.getFullYear());
+
+  // 月明细：年月下拉
   const [monthYear, setMonthYear] = useState(now.getFullYear());
   const [monthMonth, setMonthMonth] = useState(now.getMonth() + 1);
 
@@ -26,8 +29,8 @@ export function DataDetailPage() {
   let url = "";
   let cacheKey = "";
   if (tab === "daily") {
-    url = `/api/daily-detail?yearType=natural&year=${new Date(dayDate).getFullYear()}${sidParam}`;
-    cacheKey = `ecom:detail:daily:${storeIds.join(",")}:${dayDate}`;
+    url = `/api/daily-detail?yearType=${yearType}&year=${dailyYear}${sidParam}`;
+    cacheKey = `ecom:detail:daily:${storeIds.join(",")}:${yearType}:${dailyYear}`;
   } else if (tab === "monthly") {
     url = `/api/monthly-summary?year=${monthYear}&month=${monthMonth}${sidParam}`;
     cacheKey = `ecom:detail:monthly:${storeIds.join(",")}:${monthYear}-${monthMonth}`;
@@ -41,6 +44,9 @@ export function DataDetailPage() {
   const fmt = (v: number) => v?.toLocaleString(undefined, { maximumFractionDigits: 2 }) || "0";
   const fmt0 = (v: number) => `¥${(v || 0).toLocaleString(undefined, { maximumFractionDigits: 0 })}`;
   const pct = (v: number) => v ? `${(v * 100).toFixed(2)}%` : "—";
+
+  const years = Array.from({ length: 5 }, (_, i) => now.getFullYear() - i);
+  const months = Array.from({ length: 12 }, (_, i) => i + 1);
 
   return (
     <div className="space-y-6">
@@ -65,12 +71,20 @@ export function DataDetailPage() {
         {/* 每日销售明细 */}
         <TabsContent value="daily">
           <div className="space-y-4">
-            <div className="flex items-center gap-2">
-              <span className="text-xs text-muted-foreground">选择年份</span>
-              <YearNav year={new Date(dayDate).getFullYear()} onChange={(y) => {
-                const d = new Date(dayDate); d.setFullYear(y);
-                setDayDate(d.toISOString().slice(0, 10));
-              }} />
+            <div className="flex items-center gap-2 flex-wrap">
+              <ToggleGroup type="single" value={yearType} onValueChange={(v) => v && setYearType(v as any)}>
+                <ToggleGroupItem value="natural" className="text-xs">自然年</ToggleGroupItem>
+                <ToggleGroupItem value="seasonal" className="text-xs">季节年</ToggleGroupItem>
+              </ToggleGroup>
+              <Select value={String(dailyYear)} onValueChange={(v) => setDailyYear(Number(v))}>
+                <SelectTrigger className="w-[100px] h-8"><SelectValue /></SelectTrigger>
+                <SelectContent>
+                  {years.map(y => <SelectItem key={y} value={String(y)}>{y}年</SelectItem>)}
+                </SelectContent>
+              </Select>
+              <span className="text-xs text-muted-foreground">
+                {yearType === "seasonal" ? `${dailyYear}年7/1 ~ ${dailyYear+1}年6/30` : `${dailyYear}年1/1 ~ 12/31`}
+              </span>
             </div>
             {loading && !data && <Card><CardContent className="py-8 text-center text-muted-foreground">加载中...</CardContent></Card>}
             {data && <DailyTable data={data} fmt={fmt} pct={pct} />}
@@ -80,8 +94,19 @@ export function DataDetailPage() {
         {/* 每月销售汇总 */}
         <TabsContent value="monthly">
           <div className="space-y-4">
-            <div className="flex items-center gap-2">
-              <MonthNav year={monthYear} month={monthMonth} onChange={(y, m) => { setMonthYear(y); setMonthMonth(m); }} />
+            <div className="flex items-center gap-2 flex-wrap">
+              <Select value={String(monthYear)} onValueChange={(v) => setMonthYear(Number(v))}>
+                <SelectTrigger className="w-[100px] h-8"><SelectValue /></SelectTrigger>
+                <SelectContent>
+                  {years.map(y => <SelectItem key={y} value={String(y)}>{y}年</SelectItem>)}
+                </SelectContent>
+              </Select>
+              <Select value={String(monthMonth)} onValueChange={(v) => setMonthMonth(Number(v))}>
+                <SelectTrigger className="w-[80px] h-8"><SelectValue /></SelectTrigger>
+                <SelectContent>
+                  {months.map(m => <SelectItem key={m} value={String(m)}>{m}月</SelectItem>)}
+                </SelectContent>
+              </Select>
             </div>
             {loading && !data && <Card><CardContent className="py-8 text-center text-muted-foreground">加载中...</CardContent></Card>}
             {data && <MonthlyTable data={data} fmt={fmt} fmt0={fmt0} pct={pct} />}
@@ -102,7 +127,6 @@ export function DataDetailPage() {
 function DailyTable({ data, fmt, pct }: any) {
   const rows: any[] = data?.rows || [];
   const summary: any = data?.summary || {};
-
   if (rows.length === 0) return <Card><CardContent className="py-8 text-center text-muted-foreground">暂无数据</CardContent></Card>;
 
   const COLS = [
@@ -140,9 +164,7 @@ function DailyTable({ data, fmt, pct }: any) {
             <thead className="sticky top-0 z-20">
               <tr className="bg-[#0071E3] text-white">
                 {COLS.map(c => (
-                  <th key={c.key} className={cn("px-2 py-2 text-right font-semibold whitespace-nowrap", c.cum && "bg-[#0058B0]")}>
-                    {c.label}
-                  </th>
+                  <th key={c.key} className={cn("px-2 py-2 text-right font-semibold whitespace-nowrap", c.cum && "bg-[#0058B0]")}>{c.label}</th>
                 ))}
               </tr>
             </thead>
@@ -179,9 +201,7 @@ function DailyTable({ data, fmt, pct }: any) {
 // ============== 每月销售汇总表格 ==============
 function MonthlyTable({ data, fmt, fmt0, pct }: any) {
   const days: any[] = data?.days || [];
-
   if (days.length === 0) return <Card><CardContent className="py-8 text-center text-muted-foreground">暂无数据</CardContent></Card>;
-
   const total = data?.total || {};
 
   return (
@@ -238,9 +258,7 @@ function MonthlyTable({ data, fmt, fmt0, pct }: any) {
             </tfoot>
           </table>
         </div>
-        <div className="px-4 py-2 text-xs text-muted-foreground border-t">
-          {data?.monthLabel} · 共 {days.length} 天
-        </div>
+        <div className="px-4 py-2 text-xs text-muted-foreground border-t">{data?.monthLabel} · 共 {days.length} 天</div>
       </CardContent>
     </Card>
   );
@@ -249,7 +267,6 @@ function MonthlyTable({ data, fmt, fmt0, pct }: any) {
 // ============== 成本明细表格 ==============
 function CostTable({ data, fmt0 }: any) {
   const costs: any[] = Array.isArray(data) ? data : [];
-
   if (costs.length === 0) return <Card><CardContent className="py-8 text-center text-muted-foreground">暂无成本数据</CardContent></Card>;
 
   const COST_FIELDS = [
@@ -266,6 +283,7 @@ function CostTable({ data, fmt0 }: any) {
     { key: "charity", label: "公益宝贝" },
     { key: "quickPaymentFee", label: "极速回款" },
     { key: "marketingPlatform", label: "营销平台" },
+    { key: "tax", label: "税务" },
   ];
 
   return (
@@ -289,9 +307,7 @@ function CostTable({ data, fmt0 }: any) {
                   <td className="px-3 py-1.5 text-left font-medium whitespace-nowrap">{c.year}-{String(c.month).padStart(2, "0")}</td>
                   <td className="px-3 py-1.5 text-left text-muted-foreground whitespace-nowrap">{c.storeName || "—"}</td>
                   {COST_FIELDS.map(f => (
-                    <td key={f.key} className="px-3 py-1.5 text-right whitespace-nowrap">
-                      {c[f.key] ? fmt0(c[f.key]) : "—"}
-                    </td>
+                    <td key={f.key} className="px-3 py-1.5 text-right whitespace-nowrap">{c[f.key] ? fmt0(c[f.key]) : "—"}</td>
                   ))}
                   <td className="px-3 py-1.5 text-right font-bold text-[#FF3B30] whitespace-nowrap">{fmt0(c.totalCost)}</td>
                 </tr>
@@ -299,34 +315,8 @@ function CostTable({ data, fmt0 }: any) {
             </tbody>
           </table>
         </div>
-        <div className="px-4 py-2 text-xs text-muted-foreground border-t">
-          共 {costs.length} 个月度成本记录
-        </div>
+        <div className="px-4 py-2 text-xs text-muted-foreground border-t">共 {costs.length} 个月度成本记录</div>
       </CardContent>
     </Card>
-  );
-}
-
-// ============== 日期选择器 ==============
-function MonthNav({ year, month, onChange }: any) {
-  const prev = () => month === 1 ? onChange(year - 1, 12) : onChange(year, month - 1);
-  const next = () => { const n = new Date(); if (year === n.getFullYear() && month === n.getMonth() + 1) return; month === 12 ? onChange(year + 1, 1) : onChange(year, month + 1); };
-  return (
-    <div className="flex items-center gap-1 bg-[#F5F5F7] rounded-lg p-0.5">
-      <button onClick={prev} className="p-1 rounded hover:bg-white"><ChevronLeft className="size-4" /></button>
-      <span className="text-xs font-medium px-2 min-w-[80px] text-center">{year}年 {month}月</span>
-      <button onClick={next} className="p-1 rounded hover:bg-white"><ChevronRight className="size-4" /></button>
-    </div>
-  );
-}
-
-function YearNav({ year, onChange }: any) {
-  const cy = new Date().getFullYear();
-  return (
-    <div className="flex items-center gap-1 bg-[#F5F5F7] rounded-lg p-0.5">
-      <button onClick={() => onChange(year - 1)} className="p-1 rounded hover:bg-white"><ChevronLeft className="size-4" /></button>
-      <span className="text-xs font-medium px-2 min-w-[60px] text-center">{year}年</span>
-      <button onClick={() => year < cy && onChange(year + 1)} className="p-1 rounded hover:bg-white disabled:opacity-30" disabled={year >= cy}><ChevronRight className="size-4" /></button>
-    </div>
   );
 }
